@@ -1,15 +1,20 @@
-// public/js/script.js
 document.addEventListener('DOMContentLoaded', function () {
     const taskForm = document.getElementById('task-form');
     const taskList = document.getElementById('task-list');
-    
+
     // Load tasks from the server
     fetch('/api/tasks')
         .then(response => response.json())
         .then(data => {
+            if (data.length === 0) {
+                console.log('No tasks to display.');
+            }
             data.forEach(task => {
                 addTaskToList(task);
             });
+        })
+        .catch(error => {
+            console.error('Error fetching tasks:', error);
         });
 
     // Handle task addition
@@ -18,7 +23,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const taskInput = document.getElementById('task-input');
         const description = taskInput.value.trim();
 
-        if (description) {
+        if (description && description.length <= 255) {
             fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -28,7 +33,12 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(task => {
                 addTaskToList(task);
                 taskInput.value = '';
+            })
+            .catch(error => {
+                console.error('Error adding task:', error);
             });
+        } else {
+            console.error('Invalid task description.');
         }
     });
 
@@ -59,11 +69,20 @@ document.addEventListener('DOMContentLoaded', function () {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(result => {
             if (result.success) {
-                taskList.removeChild(li);
+                li.remove();
             }
+        })
+        .catch(error => {
+            console.error('Error deleting task:', error);
         });
     }
+    
 });
