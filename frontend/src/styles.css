@@ -1,0 +1,4 @@
+/* This file is referenced in index.html */
+/* Import the main CSS files */
+@import './index.css';
+@import './App.css';

@@ -1,0 +1,137 @@
+/* App-specific styles */
+/* Enable smooth scrolling for the entire website */
+html {
+  scroll-behavior: smooth;
+}
+
+/* App container */
+.app-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Main content */
+main {
+  flex: 1;
+  padding-bottom: 70px; /* Ensure space for footer */
+}
+
+/* Custom styles for todo items */
+.todo-item {
+  transition: all 0.2s ease-in-out;
+}
+
+.todo-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.todo-item.completed {
+  opacity: 0.7;
+}
+
+.todo-item.completed .todo-title {
+  text-decoration: line-through;
+}
+
+/* Custom styles for the navbar */
+.navbar-brand-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  margin-right: 8px;
+  font-weight: bold;
+  color: white;
+}
+
+/* Custom scrollbar styles */
+.todo-scroll-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.todo-scroll-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.todo-scroll-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.todo-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Add bottom padding to prevent footer overlap */
+.todo-container {
+  margin-bottom: 100px;
+  padding-bottom: 50px;
+}
+
+/* Global custom scrollbar for the entire website */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Scroll animation classes */
+.fade-in-section {
+  opacity: 0;
+  transform: translateY(20px);
+  visibility: hidden;
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  will-change: opacity, visibility;
+}
+
+.fade-in-section.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.slide-in-left {
+  opacity: 0;
+  transform: translateX(-30px);
+  visibility: hidden;
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  will-change: opacity, visibility;
+}
+
+.slide-in-left.is-visible {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.slide-in-right {
+  opacity: 0;
+  transform: translateX(30px);
+  visibility: hidden;
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+  will-change: opacity, visibility;
+}
+
+.slide-in-right.is-visible {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+}
