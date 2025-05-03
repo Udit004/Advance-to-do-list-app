@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { auth } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import axios from "axios";
+import TodoService from "../api/todoService";
 
 const TodoList = () => {
   const [user, setUser] = useState(null);
@@ -28,7 +28,7 @@ const TodoList = () => {
   const fetchTodos = async (userId) => {
     try {
       setLoading(true);
-      const res = await axios.get(`http://localhost:5000/api/todolist/todos/${userId}`);
+      const res = await TodoService.getTodosByUser(userId);
       setTodos(res.data);
       setLoading(false);
     } catch (err) {
@@ -51,13 +51,15 @@ const TodoList = () => {
       setLoading(true);
       setError("");
 
-      const response = await axios.post("http://localhost:5000/api/todolist/create", {
+      const todoData = {
         task: newTask,
         description: description,
         dueDate: dueDate,
         priority: priority,
         user: user.uid
-      });
+      };
+
+      const response = await TodoService.createTodo(todoData);
 
       // Add the new todo to the list
       setTodos([...todos, response.data.data]);
@@ -78,22 +80,33 @@ const TodoList = () => {
   // Function to toggle todo completion status
   const handleToggleStatus = async (todoId) => {
     try {
-      const response = await axios.patch(`http://localhost:5000/api/todolist/toggle/${todoId}`);
+      // Validate todoId format (MongoDB ObjectId is 24 hex characters)
+      if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+        setError("Invalid todo ID format");
+        return;
+      }
 
-      // Update the todo in the list
-      setTodos(todos.map(todo =>
-        todo._id === todoId ? response.data.data : todo
-      ));
+      const response = await TodoService.toggleTodoStatus(todoId);
+
+      if (response.data && response.data.data) {
+        // Update the todo in the list
+        setTodos(todos.map(todo =>
+          todo._id === todoId ? response.data.data : todo
+        ));
+      } else {
+        console.error("Unexpected response format:", response);
+        setError("Received unexpected response format from server");
+      }
     } catch (err) {
       console.error("Error toggling todo status:", err);
-      setError("Failed to update todo status. Please try again.");
+      setError(err.response?.data?.message || "Failed to update todo status. Please try again.");
     }
   };
 
   // Function to delete a todo
   const handleDeleteTodo = async (todoId) => {
     try {
-      await axios.delete(`http://localhost:5000/api/todolist/delete/${todoId}`);
+      await TodoService.deleteTodo(todoId);
 
       // Remove the todo from the list
       setTodos(todos.filter(todo => todo._id !== todoId));
@@ -106,17 +119,32 @@ const TodoList = () => {
   // Function to update todo priority
   const handlePriorityChange = async (todoId, newPriority) => {
     try {
-      const response = await axios.patch(`http://localhost:5000/api/todolist/priority/${todoId}`, {
-        priority: newPriority
-      });
+      // Validate todoId format (MongoDB ObjectId is 24 hex characters)
+      if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+        setError("Invalid todo ID format");
+        return;
+      }
 
-      // Update the todo in the list
-      setTodos(todos.map(todo =>
-        todo._id === todoId ? response.data.data : todo
-      ));
+      // Validate priority value
+      if (!['low', 'medium', 'high'].includes(newPriority)) {
+        setError("Invalid priority value");
+        return;
+      }
+
+      const response = await TodoService.updateTodoPriority(todoId, newPriority);
+
+      if (response.data && response.data.data) {
+        // Update the todo in the list
+        setTodos(todos.map(todo =>
+          todo._id === todoId ? response.data.data : todo
+        ));
+      } else {
+        console.error("Unexpected response format:", response);
+        setError("Received unexpected response format from server");
+      }
     } catch (err) {
       console.error("Error updating priority:", err);
-      setError("Failed to update priority. Please try again.");
+      setError(err.response?.data?.message || "Failed to update priority. Please try again.");
     }
   };
 

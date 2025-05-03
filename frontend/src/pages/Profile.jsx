@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import axios from 'axios';
+import UserService from '../api/userService';
 import { auth } from '../firebase';
 
 const Profile = () => {
@@ -19,7 +19,7 @@ const Profile = () => {
       if (currentUser) {
         setUser(currentUser);
         try {
-          const res = await axios.get(`http://localhost:5000/api/user/${currentUser.uid}`);
+          const res = await UserService.getUserProfile(currentUser.uid);
           setProfileData(prev => ({ ...prev, ...res.data }));
         } catch (err) {
           console.error('Failed to fetch profile', err);
@@ -40,7 +40,7 @@ const Profile = () => {
 
   const handleSave = async () => {
     try {
-      await axios.post(`http://localhost:5000/api/user/${user.uid}`, profileData);
+      await UserService.updateUserProfile(user.uid, profileData);
       alert('Profile saved successfully!');
     } catch (err) {
       console.error('Failed to save profile', err);

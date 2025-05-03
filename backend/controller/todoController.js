@@ -64,17 +64,31 @@ const getTodosByUser = async (req, res) => {
 const toggleTodoStatus = async (req, res) => {
   try {
     const todoId = req.params.id;
+    console.log('Toggle todo status for ID:', todoId);
+
+    // Validate MongoDB ID format
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid todo ID format"
+      });
+    }
 
     const todo = await Todo.findById(todoId);
+    console.log('Found todo:', todo);
 
     if (!todo) {
-      return res.status(404).json({ message: "Todo not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Todo not found"
+      });
     }
 
     todo.isCompleted = !todo.isCompleted;
     todo.completeDate = todo.isCompleted ? new Date() : null;
 
     const updatedTodo = await todo.save();
+    console.log('Updated todo:', updatedTodo);
 
     res.status(200).json({
       success: true,
@@ -82,6 +96,7 @@ const toggleTodoStatus = async (req, res) => {
       data: updatedTodo
     });
   } catch (error) {
+    console.error('Error in toggleTodoStatus:', error);
     res.status(500).json({
       success: false,
       message: "Error updating todo status",
@@ -95,6 +110,15 @@ const updateTodoPriority = async (req, res) => {
   try {
     const todoId = req.params.id;
     const { priority } = req.body;
+    console.log('Update priority for ID:', todoId, 'New priority:', priority);
+
+    // Validate MongoDB ID format
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid todo ID format"
+      });
+    }
 
     // Validate priority value
     if (!priority || !['low', 'medium', 'high'].includes(priority)) {
@@ -105,6 +129,7 @@ const updateTodoPriority = async (req, res) => {
     }
 
     const todo = await Todo.findById(todoId);
+    console.log('Found todo:', todo);
 
     if (!todo) {
       return res.status(404).json({
@@ -115,6 +140,7 @@ const updateTodoPriority = async (req, res) => {
 
     todo.priority = priority;
     const updatedTodo = await todo.save();
+    console.log('Updated todo:', updatedTodo);
 
     res.status(200).json({
       success: true,
@@ -122,6 +148,7 @@ const updateTodoPriority = async (req, res) => {
       data: updatedTodo
     });
   } catch (error) {
+    console.error('Error in updateTodoPriority:', error);
     res.status(500).json({
       success: false,
       message: "Error updating todo priority",
