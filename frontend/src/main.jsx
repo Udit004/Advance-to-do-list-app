@@ -1,12 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
-// Import our styles
-import './index.css'
 
-// Import Bootstrap JS
-import 'bootstrap/dist/js/bootstrap.bundle.min.js'
-import 'bootstrap/dist/css/bootstrap.min.css';
+
+
+// Import Bootstrap Icons CSS (keeping this for icons)
+import 'bootstrap-icons/font/bootstrap-icons.css';
 
 import App from './App.jsx'
 

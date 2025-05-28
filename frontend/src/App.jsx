@@ -1,42 +1,36 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Home from './pages/Home';
-import TodoList from './pages/Todolist';
-import Contact from './pages/Contact';
-import Profile from './pages/Profile';
+import TodoList from './pages/TodoList';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-
 import Navbar from './components/Navbar';
-import Footer from './components/footer';
-import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
+import Footer from './components/Footer';
+import Prices from './pages/Prices';
+import ScrollToTop from './components/ScrollToTop';
 
-import './App.css';
-
-function App() {
+const App = () => {
   return (
     <AuthProvider>
       <Router>
-        <div className="app-wrapper d-flex flex-column min-vh-100">
+        <ScrollToTop />
+        <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#2a2d4c] to-[#0f1225] text-gray-100">
           <Navbar />
-          <main className="flex-grow-1 mb-5 pb-5">
+          <main className="container mx-auto pt-20 pb-4">
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/todolist" element={<TodoList />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/todolist" element={<TodoList />} />
-              <Route path="/contact" element={<Contact />} />
+              <Route path="/prices" element={<Prices />} />
             </Routes>
           </main>
-          <Footer />
-          <ScrollToTop />
+          <Footer/>
         </div>
       </Router>
     </AuthProvider>
   );
-}
+};
 
 export default App;

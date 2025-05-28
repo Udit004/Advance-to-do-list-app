@@ -1,376 +1,309 @@
-import React, { useEffect, useState } from "react";
-import { auth } from "../firebase";
-import { onAuthStateChanged } from "firebase/auth";
-import TodoService from "../api/todoService";
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { Button } from "../components/ui/button";
+import API from "../api/config";
 
 const TodoList = () => {
-  const [user, setUser] = useState(null);
-  const [todos, setTodos] = useState([]);
-  const [newTask, setNewTask] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("medium");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { currentUser } = useAuth();
+  const [tasks, setTasks] = useState([]);
+  const [editingTodo, setEditingTodo] = useState(null);
 
-  // Fetch todos when user changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        fetchTodos(currentUser.uid);
+    const fetchTodos = async () => {
+      try {
+        const response = await API.get(`/todolist/todos/${currentUser.uid}`);
+        setTasks(response.data);
+      } catch (error) {
+        console.error("Error fetching todos:", error);
       }
-    });
-    return () => unsub();
-  }, []);
+    };
+    fetchTodos();
+  }, [currentUser.uid]);
 
-  // Function to fetch todos
-  const fetchTodos = async (userId) => {
-    try {
-      setLoading(true);
-      const res = await TodoService.getTodosByUser(userId);
-      setTodos(res.data);
-      setLoading(false);
-    } catch (err) {
-      console.error("Error fetching todos:", err);
-      setError("Failed to load your todos. Please try again.");
-      setLoading(false);
-    }
+  const [formData, setFormData] = useState({
+    task: "",
+    description: "",
+    dueDate: "",
+    priority: "",
+    list: "",
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
-
-  // Function to add a new todo
-  const handleAddTodo = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!newTask.trim()) {
-      setError("Task cannot be empty");
-      return;
-    }
-
+    console.log(formData);
     try {
-      setLoading(true);
-      setError("");
-
-      const todoData = {
-        task: newTask,
-        description: description,
-        dueDate: dueDate,
-        priority: priority,
-        user: user.uid
-      };
-
-      const response = await TodoService.createTodo(todoData);
-
-      // Add the new todo to the list
-      setTodos([...todos, response.data.data]);
-
-      // Clear the form
-      setNewTask("");
-      setDescription("");
-      setDueDate("");
-      setPriority("medium");
-      setLoading(false);
-    } catch (err) {
-      console.error("Error adding todo:", err);
-      setError("Failed to add todo. Please try again.");
-      setLoading(false);
-    }
-  };
-
-  // Function to toggle todo completion status
-  const handleToggleStatus = async (todoId) => {
-    try {
-      // Validate todoId format (MongoDB ObjectId is 24 hex characters)
-      if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
-        setError("Invalid todo ID format");
-        return;
-      }
-
-      const response = await TodoService.toggleTodoStatus(todoId);
-
-      if (response.data && response.data.data) {
-        // Update the todo in the list
-        setTodos(todos.map(todo =>
-          todo._id === todoId ? response.data.data : todo
-        ));
+      if (editingTodo) {
+        const response = await API.put(
+          `/todolist/update/${editingTodo._id}`,
+          formData
+        );
+        if (response.data) {
+          setTasks((prevTasks) =>
+            prevTasks.map((task) =>
+              task._id === editingTodo._id ? response.data : task
+            )
+          );
+        }
+        setEditingTodo(null);
+        console.log("Todo updated successfully", response.data);
+        console.log("Response from update:", response);
       } else {
-        console.error("Unexpected response format:", response);
-        setError("Received unexpected response format from server");
+        const response = await API.post("/todolist/create", {
+          ...formData,
+          user: currentUser.uid,
+        });
+        setTasks((prevTasks) => [...prevTasks, response.data.data]);
+        console.log("Todo created successfully", response.data);
+        console.log("Response from create:", response);
       }
-    } catch (err) {
-      console.error("Error toggling todo status:", err);
-      setError(err.response?.data?.message || "Failed to update todo status. Please try again.");
+      setFormData({
+        task: "",
+        description: "",
+        dueDate: "",
+        priority: "",
+        list: "",
+      });
+    } catch (error) {
+      console.error("Error creating todo:", error);
     }
   };
 
-  // Function to delete a todo
-  const handleDeleteTodo = async (todoId) => {
+  const handleEditClick = (task) => {
+    setEditingTodo(task);
+    setFormData({
+      task: task.task,
+      description: task.description,
+      dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 16) : "",
+      priority: task.priority,
+      list: task.list,
+    });
+  };
+
+  const handleDelete = async (id) => {
     try {
-      await TodoService.deleteTodo(todoId);
-
-      // Remove the todo from the list
-      setTodos(todos.filter(todo => todo._id !== todoId));
-    } catch (err) {
-      console.error("Error deleting todo:", err);
-      setError("Failed to delete todo. Please try again.");
+      const DeleteTodo = await API.delete(`/todolist/delete/${id}`);
+      setTasks((prevTasks) => prevTasks.filter((task) => task._id !== id));
+      console.log("Todo deleted successfully", DeleteTodo);
+    } catch (error) {
+      console.error("Error deleting todo:", error);
     }
   };
-
-  // Function to update todo priority
-  const handlePriorityChange = async (todoId, newPriority) => {
-    try {
-      // Validate todoId format (MongoDB ObjectId is 24 hex characters)
-      if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
-        setError("Invalid todo ID format");
-        return;
-      }
-
-      // Validate priority value
-      if (!['low', 'medium', 'high'].includes(newPriority)) {
-        setError("Invalid priority value");
-        return;
-      }
-
-      const response = await TodoService.updateTodoPriority(todoId, newPriority);
-
-      if (response.data && response.data.data) {
-        // Update the todo in the list
-        setTodos(todos.map(todo =>
-          todo._id === todoId ? response.data.data : todo
-        ));
-      } else {
-        console.error("Unexpected response format:", response);
-        setError("Received unexpected response format from server");
-      }
-    } catch (err) {
-      console.error("Error updating priority:", err);
-      setError(err.response?.data?.message || "Failed to update priority. Please try again.");
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="container mt-5 text-center">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-        <p className="mt-3">Please log in to view your todos</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="container mt-5 todo-container">
-      <div className="row">
-        <div className="col-md-8 offset-md-2">
-          <div className="card shadow-sm">
-            <div className="card-header bg-primary text-white">
-              <h2 className="mb-0">📝 My To-Do List</h2>
+    <>
+      <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="relative z-0 bg-gradient-to-br from-[#232526]/80 via-[#2c5364]/80 to-[#0f2027]/80 rounded-2xl shadow-lg backdrop-blur-xl bg-gray-800/40  py-10 md:py-16">
+          <h1 className="text-3xl font-bold text-center items-center mb-10">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 via-amber-400 to-amber-200">
+              Create ToDo List
+            </span>
+          </h1>
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6 space-y-0 text-center justify-items-center md:w-3/4 md:mx-auto bg-white/5 p-8 rounded-xl shadow-lg backdrop-blur-md border border-amber-200/10"
+            autoComplete="off"
+          >
+            <div className="w-full">
+              <label
+                htmlFor="task"
+                className="block text-left font-semibold mb-1 text-amber-200"
+              >
+                Task<span className="text-red-400">*</span>
+              </label>
+              <input
+                id="task"
+                name="task"
+                type="text"
+                value={formData.task}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-lg border-2 border-amber-200/40 bg-transparent text-gray-100 focus:outline-none focus:border-amber-400 placeholder:text-amber-100/60"
+                placeholder="Enter your task"
+                required
+              />
             </div>
 
-            <div className="card-body">
-              {error && (
-                <div className="alert alert-danger" role="alert">
-                  {error}
-                </div>
-              )}
+            <div className="w-full">
+              <label
+                htmlFor="description"
+                className="block text-left font-semibold mb-1 text-amber-200"
+              >
+                Description
+              </label>
+              <textarea
+                id="description"
+                name="description"
+                rows="4"
+                value={formData.description}
+                onChange={handleChange}
+                className="w-full px-4 py-3 rounded-lg border-2 border-amber-200/40 bg-transparent text-gray-100 focus:outline-none focus:border-amber-400 placeholder:text-amber-100/60 resize-none"
+                placeholder="Add a detailed description of your task)"
+                required
+              />
+            </div>
 
-              {/* Add Todo Form */}
-              <form onSubmit={handleAddTodo} className="mb-4">
-                <div className="mb-3">
-                  <label htmlFor="taskInput" className="form-label">New Task</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    id="taskInput"
-                    value={newTask}
-                    onChange={(e) => setNewTask(e.target.value)}
-                    placeholder="What needs to be done?"
-                    required
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label htmlFor="descriptionInput" className="form-label">Description (optional)</label>
-                  <textarea
-                    className="form-control"
-                    id="descriptionInput"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Add details about this task..."
-                    rows="2"
-                  ></textarea>
-                </div>
-
-                <div className="mb-3">
-                  <label htmlFor="dueDateInput" className="form-label">Due Date</label>
-                  <input
-                    type="datetime-local"
-                    className="form-control"
-                    id="dueDateInput"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                  />
-                </div>
-
-                <div className="mb-3">
-                  <label htmlFor="prioritySelect" className="form-label">Priority</label>
-                  <select
-                    className="form-select"
-                    id="prioritySelect"
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={loading}
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <label
+                  htmlFor="dueDate"
+                  className="block text-left font-semibold mb-1 text-amber-200"
                 >
-                  {loading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      Adding...
-                    </>
-                  ) : (
-                    "Add Task"
-                  )}
-                </button>
-              </form>
+                  Due Date<span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="dueDate"
+                  name="dueDate"
+                  type="datetime-local"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-amber-200/40 bg-transparent text-gray-100 focus:outline-none focus:border-amber-400 [color-scheme:dark]"
+                  required
+                />
+              </div>
 
-              <hr />
+              <div className="flex-1">
+                <label
+                  htmlFor="priority"
+                  className="block text-left font-semibold mb-1 text-amber-200"
+                >
+                  Priority<span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="priority"
+                  name="priority"
+                  value={formData.priority}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-amber-200/40 bg-transparent text-gray-100 focus:outline-none focus:border-amber-400"
+                  required
+                >
+                  <option value="" disabled>
+                    Select priority
+                  </option>
+                  <option value="low" className="bg-gray-800">
+                    low
+                  </option>
+                  <option value="medium" className="bg-gray-800">
+                    medium
+                  </option>
+                  <option value="high" className="bg-gray-800">
+                    high
+                  </option>
+                </select>
+              </div>
 
-              {/* Todo List */}
-              <h4 className="mb-3">Your Tasks</h4>
-
-              {loading ? (
-                <div className="text-center my-4">
-                  <div className="spinner-border text-primary" role="status">
-                    <span className="visually-hidden">Loading...</span>
+              <div className="flex-1">
+                <label
+                  htmlFor="category"
+                  className="block text-left font-semibold mb-1 text-amber-200"
+                >
+                  Category
+                </label>
+                <select
+                  id="list"
+                  name="list"
+                  value={formData.list}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-amber-200/40 bg-transparent text-gray-100 focus:outline-none focus:border-amber-400"
+                >
+                  <option value="" disabled>
+                    Select category
+                  </option>
+                  <option value="general" className="bg-gray-800">
+                    general
+                  </option>
+                  <option value="groceries" className="bg-gray-800">
+                    groceries
+                  </option>
+                  <option value="work" className="bg-gray-800">
+                    work
+                  </option>
+                  <option value="house" className="bg-gray-800">
+                    house
+                  </option>
+                  <option value="education" className="bg-gray-800">
+                    education
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end items-center">
+            <Button
+              type="submit"
+              onClick={handleSubmit}
+              className="px-8 py-3 font-semibold rounded-lg bg-gradient-to-r from-amber-600 via-amber-400 to-amber-200 text-gray-900 shadow-md hover:from-amber-700 hover:to-amber-300 transition-all duration-200"
+            >
+              {editingTodo ? "Update Task" : "Add Task"}
+            </Button>
+            </div>
+          </form>
+          <h2 className="text-3xl font-bold text-center mb-10">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-600 via-amber-400 to-amber-200">
+              Your Tasks
+            </span>
+          </h2>
+        <div className="space-y-4 md:w-3/4 mx-auto px-8">
+          {/* Todo item template - will be mapped over actual todos later */}
+          {tasks.filter(task => task).map((task) => {
+            console.log("Current task in map:", task);
+            return (
+            <div
+              key={task._id}
+              className="bg-white/5 p-6 rounded-xl shadow-lg backdrop-blur-md border border-amber-200/10 flex flex-col md:flex-row gap-4 items-center justify-between"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5 rounded border-amber-200/40 bg-transparent checked:bg-amber-400 checked:border-transparent focus:ring-amber-400 focus:ring-offset-0"
+                  />
+                  <h3 className="text-xl font-semibold text-amber-200 truncate">
+                    {task.task}
+                  </h3>
+                </div>
+                <p className="mt-2 text-gray-300">{task.description}</p>
+                <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                  <span className="px-3 py-1 rounded-full bg-amber-400/20 text-amber-200">
+                    {task.dueDate}
+                  </span>
+                    <span className="px-3 py-1 rounded-full bg-red-400/20 text-red-200">
+                      {task.priority}
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-blue-400/20 text-blue-200">
+                      {task.list}
+                    </span>
                   </div>
                 </div>
-              ) : todos.length === 0 ? (
-                <div className="alert alert-info" role="alert">
-                  You don't have any tasks yet. Add one above!
+                <div className="flex gap-3 md:flex-col justify-end">
+                  <button
+                    onClick={() => handleEditClick(task)}
+                    className="px-4 py-2 rounded-lg bg-amber-400/20 text-amber-200 hover:bg-amber-400/30 transition-colors duration-200"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task._id)}
+                    className="px-4 py-2 rounded-lg bg-red-400/20 text-red-200 hover:bg-red-400/30 transition-colors duration-200"
+                  >
+                    Delete
+                  </button>
                 </div>
-              ) : (
-                <div className="todo-scroll-container" style={{
-                  maxHeight: '400px',
-                  overflowY: 'auto',
-                  borderRadius: '0.25rem',
-                  padding: '0.5rem',
-                  marginRight: '-0.5rem',
-                  boxShadow: 'inset 0 0 5px rgba(0,0,0,0.1)'
-                }}>
-                  <ul className="list-group">
-                    {todos.map((todo) => (
-                      <li
-                        key={todo._id}
-                        className={`list-group-item d-flex justify-content-between align-items-center todo-item ${
-                          todo.isCompleted ? "list-group-item-success" : ""
-                        }`}
-                      >
-                        <div className="d-flex align-items-center">
-                          <input
-                            className="form-check-input me-3"
-                            type="checkbox"
-                            checked={todo.isCompleted}
-                            onChange={() => handleToggleStatus(todo._id)}
-                            id={`todo-${todo._id}`}
-                          />
-                          <div>
-                            <label
-                              className={`form-check-label ${todo.isCompleted ? "text-decoration-line-through" : ""}`}
-                              htmlFor={`todo-${todo._id}`}
-                            >
-                              {todo.task}
-                            </label>
-                            {todo.description && (
-                              <p className="text-muted small mb-0">{todo.description}</p>
-                            )}
-                            {todo.dueDate && (
-                              <p className="text-muted small mb-0">
-                                <strong>Due:</strong> {new Date(todo.dueDate).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="d-flex flex-column align-items-end">
-                          <div className="d-flex mb-2">
-                            <span className={`badge ${todo.isCompleted ? "bg-success" : "bg-secondary"} me-2`}>
-                              {todo.isCompleted ? "Completed" : "Pending"}
-                            </span>
-                            <span className={`badge ${
-                              todo.priority === 'high' ? 'bg-danger' :
-                              todo.priority === 'medium' ? 'bg-warning' :
-                              'bg-info'
-                            } me-2`}>
-                              {todo.priority.charAt(0).toUpperCase() + todo.priority.slice(1)} Priority
-                            </span>
-                          </div>
+              </div>
+            );
+          })
+          }
 
-                          <div className="d-flex">
-                            <div className="dropdown me-2">
-                              <button
-                                className="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                type="button"
-                                id={`priorityDropdown-${todo._id}`}
-                                data-bs-toggle="dropdown"
-                                aria-expanded="false"
-                              >
-                                Priority
-                              </button>
-                              <ul className="dropdown-menu" aria-labelledby={`priorityDropdown-${todo._id}`}>
-                                <li>
-                                  <button
-                                    className="dropdown-item"
-                                    onClick={() => handlePriorityChange(todo._id, 'low')}
-                                  >
-                                    Low
-                                  </button>
-                                </li>
-                                <li>
-                                  <button
-                                    className="dropdown-item"
-                                    onClick={() => handlePriorityChange(todo._id, 'medium')}
-                                  >
-                                    Medium
-                                  </button>
-                                </li>
-                                <li>
-                                  <button
-                                    className="dropdown-item"
-                                    onClick={() => handlePriorityChange(todo._id, 'high')}
-                                  >
-                                    High
-                                  </button>
-                                </li>
-                              </ul>
-                            </div>
 
-                            <button
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() => handleDeleteTodo(todo._id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
-      </div>
+      </section>
     </div>
+    </>
   );
 };
 

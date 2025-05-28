@@ -43,10 +43,14 @@ const todoSchema = new mongoose.Schema({
   user: {
     type: String,
     required: [true, 'User ID is required']
-  },
-  completeDate: {
+  },  completeDate: {
     type: Date,
     default: null
+  },
+  list: {
+    type: String,
+    enum: ['general', 'groceries', 'work', 'house','education'],
+    // default: 'general'
   }
 }, {
   timestamps: true, // Auto-manage createdAt and updatedAt

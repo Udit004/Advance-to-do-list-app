@@ -16,7 +16,8 @@ const createTodo = async (req, res) => {
       description: req.body.description || "",
       dueDate: req.body.dueDate || null,
       priority: req.body.priority || "medium",
-      user: req.body.user
+      user: req.body.user,
+      list: req.body.list || "general" // Add this line to include the list property
     });
 
     // Save to database
