@@ -9,6 +9,7 @@ import { AuthProvider } from './context/AuthContext';
 import Footer from './components/Footer';
 import Prices from './pages/Prices';
 import ScrollToTop from './components/ScrollToTop';
+import Profile from './pages/Profile';
 
 const App = () => {
   return (
@@ -23,6 +24,7 @@ const App = () => {
               <Route path="/todolist" element={<TodoList />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
+              <Route path="/Profile" element={<Profile/>}/>
               <Route path="/prices" element={<Prices />} />
             </Routes>
           </main>

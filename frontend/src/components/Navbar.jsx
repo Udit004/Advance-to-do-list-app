@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import API from '../api/config';
 import { auth } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Link, useNavigate } from 'react-router-dom';
@@ -10,8 +11,18 @@ const Navbar = () => {
 
   // Listen for auth state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          const response = await API.get(`/profile/${currentUser.uid}`);
+          setUser({ ...currentUser, photoURL: response.data.profileImage || currentUser.photoURL, displayName: response.data.username || currentUser.displayName });
+        } catch (error) {
+          console.error("Failed to fetch user profile in Navbar:", error);
+          setUser(currentUser); // Fallback to original user if profile fetch fails
+        }
+      } else {
+        setUser(null);
+      }
     });
     return () => unsubscribe();
   }, []);

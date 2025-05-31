@@ -20,12 +20,12 @@ const todoSchema = new mongoose.Schema({
   },
   dueDate: {
     type: Date,
-    validate: {
-      validator: function(value) {
-        return !value || value > Date.now();
-      },
-      message: 'Due date must be in the future'
-    }
+    // validate: {
+    //   validator: function(value) {
+    //     return !value || value > Date.now();
+    //   },
+    //   message: 'Due date must be in the future'
+    // }
   },
   priority: {
     type: String,

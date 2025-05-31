@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
-const userRoutes = require('./routes/user');
+const userProfileRoutes = require('./routes/userProfileRoutes');
 const todoRoutes = require('./routes/todolist');
 const connectDB = require('./config/db');
 
@@ -33,7 +33,7 @@ app.get('/', (_, res) => {
   res.send('🖐️ Hello from the Express backend!');
 });
 
-app.use('/api/user', userRoutes);
+app.use('/api', userProfileRoutes);
 app.use('/api/todolist', todoRoutes);
 
 app.listen(PORT, () => {
