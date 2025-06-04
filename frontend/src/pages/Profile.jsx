@@ -24,7 +24,7 @@ const Profile = () => {
     const fetchProfile = async () => {
       if (user && user.uid) {
         try {
-          const response = await API.get(`/profile/${profileData._id || user.uid}`);
+          const response = await API.get(`/user/profile/${profileData._id || user.uid}`);
           if (response.data) {
             setProfileData({
               ...response.data,
@@ -95,7 +95,7 @@ const Profile = () => {
 
       let response;
       if (profileData._id) {
-        response = await API.put(`/profile/${profileData._id}`, formData, {
+        response = await API.put(`/user/profile/${profileData._id}`, formData, {
           headers: { "Content-Type": "multipart/form-data" }
         });
         toast.success("Profile updated successfully!");
@@ -106,7 +106,11 @@ const Profile = () => {
         toast.success("Profile created successfully!");
       }
 
-      setProfileData(response.data);
+      setProfileData(prevData => ({
+        ...prevData,
+        ...response.data,
+        photoURL: response.data.profileImage || prevData.photoURL // Update photoURL with the actual Cloudinary URL
+      }));
       setIsEditing(false); // Close edit form after saving
       setPhotoFile(null); // Reset photo file
     } catch (err) {

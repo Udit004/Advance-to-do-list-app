@@ -33,8 +33,14 @@ app.get('/', (_, res) => {
   res.send('🖐️ Hello from the Express backend!');
 });
 
-app.use('/api', userProfileRoutes);
+app.use('/api/user', userProfileRoutes);
 app.use('/api/todolist', todoRoutes);
+
+app.use((err, req, res, next) => {
+  console.error(err); // Log the entire error object
+  console.error(err.stack); // Log the error stack to the server console
+  res.status(500).send('Something broke! Check server logs for details.');
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);

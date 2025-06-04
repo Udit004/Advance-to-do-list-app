@@ -14,7 +14,7 @@ const Navbar = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         try {
-          const response = await API.get(`/profile/${currentUser.uid}`);
+          const response = await API.get(`/user/profile/${currentUser.uid}`);
           setUser({ ...currentUser, photoURL: response.data.profileImage || currentUser.photoURL, displayName: response.data.username || currentUser.displayName });
         } catch (error) {
           console.error("Failed to fetch user profile in Navbar:", error);
