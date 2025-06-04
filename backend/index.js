@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 5000;
 
 // Configure CORS
 app.use(cors({
-  origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app/"],
+  origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app"],
   credentials: false, // Changed to false to match frontend config
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
