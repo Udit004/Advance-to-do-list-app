@@ -3,15 +3,8 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 import API from "../api/config";
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 
-const reorder = (list, startIndex, endIndex) => {
-  const result = Array.from(list);
-  const [removed] = result.splice(startIndex, 1);
-  result.splice(endIndex, 0, removed);
-  return result;
-};
 
 const TodoList = () => {
   const { currentUser } = useAuth();
@@ -50,19 +43,6 @@ const TodoList = () => {
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.isCompleted).length;
   const progressPercentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-
-  const onDragEnd = (result) => {
-    if (!result.destination) {
-      return;
-    }
-    const reorderedTasks = reorder(
-      tasks,
-      result.source.index,
-      result.destination.index
-    );
-    setTasks(reorderedTasks);
-  };
-
   const isdueToday = (taskDueDate) => {
     if (!taskDueDate) return false;
     const today = new Date();
@@ -436,108 +416,92 @@ const TodoList = () => {
             </div>
 
             {/* Tasks List */}
-            <DragDropContext onDragEnd={onDragEnd}>
-              <Droppable droppableId="tasks">
-                {(provided) => (
-                  <div
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    className="space-y-4"
-                  >
-                    {filteredTasks.length === 0 ? (
-                      <div className="text-center py-12">
-                        <p className="text-slate-400 text-lg">No tasks found</p>
-                      </div>
-                    ) : (
-                      filteredTasks.map((task, index) => (
-                        <Draggable key={task._id} draggableId={task._id.toString()} index={index}>
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`p-6 rounded-xl backdrop-blur-sm border transition-all duration-200 hover:scale-[1.01] ${
-                                isdueToday(task.dueDate)
-                                  ? "bg-red-900/30 border-red-500/50 shadow-lg shadow-red-500/10"
-                                  : "bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/40"
-                              }`}
-                            >
-                              <div className="flex flex-col md:flex-row gap-4 items-start">
-                                {/* Task Content */}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <input
-                                      type="checkbox"
-                                      checked={task.isCompleted}
-                                      onChange={(e) =>
-                                        handleToggleComplete(task._id, e.target.checked)
-                                      }
-                                      className="w-5 h-5 rounded border-slate-400 bg-slate-700/50 checked:bg-green-500 checked:border-transparent focus:ring-green-500 focus:ring-offset-0 transition-all duration-200"
-                                    />
-                                    <h3 className={`text-xl font-semibold ${
-                                      task.isCompleted ? "text-slate-400 line-through" : "text-white"
-                                    }`}>
-                                      {task.task}
-                                    </h3>
-                                  </div>
-                                  
-                                  <p className="text-slate-300 mb-4 leading-relaxed">
-                                    {task.description}
-                                  </p>
-                                  
-                                  {/* Task Meta */}
-                                  <div className="flex flex-wrap gap-2">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                      task.priority === 'high' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
-                                      task.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
-                                      'bg-green-500/20 text-green-300 border border-green-500/30'
-                                    }`}>
-                                      {task.priority?.toUpperCase()}
-                                    </span>
-                                    <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-medium">
-                                      {task.list?.toUpperCase()}
-                                    </span>
-                                    <span className="px-3 py-1 rounded-full bg-slate-600/50 text-slate-300 border border-slate-500/30 text-xs font-medium">
-                                      Due: {new Date(task.dueDate).toLocaleDateString("en-GB")} {" "}
-                                      {new Date(task.dueDate).toLocaleTimeString([], {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      })}
-                                    </span>
-                                    {isdueToday(task.dueDate) && (
-                                      <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-medium animate-pulse">
-                                        DUE TODAY
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-2 md:flex-col">
-                                  <button
-                                    onClick={() => handleEditClick(task)}
-                                    className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-all duration-200 text-sm font-medium"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDelete(task._id)}
-                                    className="px-4 py-2 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-all duration-200 text-sm font-medium"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))
-                    )
-                  }
+            
+              {filteredTasks.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-slate-400 text-lg">No tasks found</p>
                 </div>
+              ) : (
+                filteredTasks.map((task) => (
+                  <div
+                    key={task._id}
+                    className={`p-6 rounded-xl backdrop-blur-sm border transition-all duration-200 hover:scale-[1.01] ${
+                      isdueToday(task.dueDate)
+                        ? "bg-red-900/30 border-red-500/50 shadow-lg shadow-red-500/10"
+                        : "bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/40"
+                    }`}
+                  >
+                    <div className="flex flex-col md:flex-row gap-4 items-start">
+                      {/* Task Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-3">
+                          <input
+                            type="checkbox"
+                            checked={task.isCompleted}
+                            onChange={(e) =>
+                              handleToggleComplete(task._id, e.target.checked)
+                            }
+                            className="w-5 h-5 rounded border-slate-400 bg-slate-700/50 checked:bg-green-500 checked:border-transparent focus:ring-green-500 focus:ring-offset-0 transition-all duration-200"
+                          />
+                          <h3 className={`text-xl font-semibold ${
+                            task.isCompleted ? "text-slate-400 line-through" : "text-white"
+                          }`}>
+                            {task.task}
+                          </h3>
+                        </div>
+                        
+                        <p className="text-slate-300 mb-4 leading-relaxed">
+                          {task.description}
+                        </p>
+                        
+                        {/* Task Meta */}
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            task.priority === 'high' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                            task.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
+                            'bg-green-500/20 text-green-300 border border-green-500/30'
+                          }`}>
+                            {task.priority?.toUpperCase()}
+                          </span>
+                          <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-medium">
+                            {task.list?.toUpperCase()}
+                          </span>
+                          <span className="px-3 py-1 rounded-full bg-slate-600/50 text-slate-300 border border-slate-500/30 text-xs font-medium">
+                            Due: {new Date(task.dueDate).toLocaleDateString("en-GB")} {" "}
+                            {new Date(task.dueDate).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          {isdueToday(task.dueDate) && (
+                            <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-medium animate-pulse">
+                              DUE TODAY
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 md:flex-col">
+                        <button
+                          onClick={() => handleEditClick(task)}
+                          className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-all duration-200 text-sm font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(task._id)}
+                          className="px-4 py-2 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-all duration-200 text-sm font-medium"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
               )}
-            </Droppable>
-          </DragDropContext>
+            
+          
         </div>
       </section>
     </div>
