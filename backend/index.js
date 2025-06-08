@@ -3,13 +3,26 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const userProfileRoutes = require('./routes/userProfileRoutes');
-const todoRoutes = require('./routes/todolist');
+
+const notificationRoutes = require('./routes/notificationRoutes');
 const connectDB = require('./config/db');
+const startNotificationCleanup = require('./scheduler/notificationScheduler');
+
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+const io = new Server(server, {
+  cors: {
+    origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 // Middleware for parsing request bodies
@@ -34,7 +47,6 @@ app.get('/', (_, res) => {
 });
 
 app.use('/api/user', userProfileRoutes);
-app.use('/api/todolist', todoRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err); // Log the entire error object
@@ -42,6 +54,18 @@ app.use((err, req, res, next) => {
   res.status(500).send('Something broke! Check server logs for details.');
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
 });
+
+module.exports = { io };
+
+// Routes that use the 'io' object should be required after 'io' is exported
+app.use('/api/todolist', require('./routes/todolist'));
+app.use('/api/notifications',notificationRoutes);
+
+require('./scheduler/notificationScheduler');
+startNotificationCleanup();
+// Ensure io is initialized before requiring controllers that use it
+// This line is intentionally placed after io initialization
+// const todoController = require('./controller/todoController'); // This line is not needed here, as routes already require it.

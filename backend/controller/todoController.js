@@ -1,6 +1,7 @@
 // Import Mongoose model
 const Todo = require('../models/todo');
-
+const Notification = require('../models/notificationModel');
+const { io } = require('../index');
 // POST - Create new todo
 const createTodo = async (req, res) => {
   try {
@@ -22,7 +23,14 @@ const createTodo = async (req, res) => {
 
     // Save to database
     const savedTodo = await newTodo.save();
-
+    await Notification.create({
+      user: savedTodo.user,
+      todoId: savedTodo._id,
+      message: `new todo created: "${savedTodo.task}"`,
+      type: 'new_todo',
+      read: false
+    });
+    io.emit('newNotification', { userId: savedTodo.user, message: `Your todo "${savedTodo.task}" is created` });
     // Return success response
     res.status(201).json({
       success: true,
@@ -90,7 +98,27 @@ const toggleTodoStatus = async (req, res) => {
 
     const updatedTodo = await todo.save();
     console.log('Updated todo:', updatedTodo);
-
+    if (updatedTodo.isCompleted) { // Only create/update notification when marking as complete
+      await Notification.findOneAndUpdate(
+        {
+          user: updatedTodo.user,
+          todoId: updatedTodo._id,
+          type: 'todo_completed'
+        },
+        {
+          $set: {
+            message: `Todo completed: "${updatedTodo.task}"`,
+            read: false // Mark as unread when re-completing
+          }
+        },
+        {
+          upsert: true, // Create if not found
+          new: true,    // Return the updated/created document
+          setDefaultsOnInsert: true // Apply schema defaults for new documents
+        }
+      );
+      io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is completed` });
+    }
     res.status(200).json({
       success: true,
       message: "Todo status updated",
@@ -157,6 +185,8 @@ const updateTodoPriority = async (req, res) => {
     });
   }
 };
+
+
 
 module.exports = {
   createTodo,
