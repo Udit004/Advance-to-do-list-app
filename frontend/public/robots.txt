@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://advance-to-do-list-app.vercel.app/sitemap.xml
