@@ -2,6 +2,8 @@
 const Todo = require('../models/todo');
 const Notification = require('../models/notificationModel');
 const { io } = require('../index');
+const transporter = require('../config/email'); // Import the transporter
+
 // POST - Create new todo
 const createTodo = async (req, res) => {
   try {
@@ -26,11 +28,18 @@ const createTodo = async (req, res) => {
     await Notification.create({
       user: savedTodo.user,
       todoId: savedTodo._id,
-      message: `new todo created: "${savedTodo.task}"`,
+      message: `new todo created: "${savedTodo.task}"`, // Use savedTodo.task
       type: 'new_todo',
       read: false
     });
     io.emit('newNotification', { userId: savedTodo.user, message: `Your todo "${savedTodo.task}" is created` });
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER, // Correct environment variable
+      to: req.user.email,
+      subject: 'New Todo Created',
+      html: `<p>A new task <strong>${newTodo.task}</strong> has been created!</p>` // Use newTodo.task
+    });
     // Return success response
     res.status(201).json({
       success: true,
@@ -107,7 +116,7 @@ const toggleTodoStatus = async (req, res) => {
         },
         {
           $set: {
-            message: `Todo completed: "${updatedTodo.task}"`,
+            message: `Todo completed: "${updatedTodo.task}"`, // Use updatedTodo.task
             read: false // Mark as unread when re-completing
           }
         },
@@ -118,6 +127,14 @@ const toggleTodoStatus = async (req, res) => {
         }
       );
       io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is completed` });
+
+      // Send email for task completion
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: req.user.email,
+        subject: 'Todo Completed',
+        html: `<p>Your task <strong>${updatedTodo.task}</strong> has been marked as completed!</p>`
+      });
     }
     res.status(200).json({
       success: true,

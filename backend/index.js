@@ -19,7 +19,8 @@ const { Server } = require('socket.io');
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app"],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    credentials: true // Set credentials to true
   }
 });
 
@@ -32,13 +33,17 @@ const PORT = process.env.PORT || 5000;
 // Configure CORS
 app.use(cors({
   origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app"],
-  credentials: false, // Changed to false to match frontend config
+  credentials: true, // Changed to true to match frontend config
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
 // Parse JSON request body
 app.use(express.json());
+app.use((req, res, next) => {
+  console.log(`Incoming Request: ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 connectDB();
 
@@ -64,8 +69,8 @@ module.exports = { io };
 app.use('/api/todolist', require('./routes/todolist'));
 app.use('/api/notifications',notificationRoutes);
 
-require('./scheduler/notificationScheduler');
-startNotificationCleanup();
+const startNotificationScheduler = require('./scheduler/notificationScheduler');
+startNotificationScheduler(io);
 // Ensure io is initialized before requiring controllers that use it
 // This line is intentionally placed after io initialization
 // const todoController = require('./controller/todoController'); // This line is not needed here, as routes already require it.

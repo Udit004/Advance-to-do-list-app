@@ -5,7 +5,7 @@ const baseURL = import.meta.env.VITE_API_URL;
 
 const API = axios.create({
   baseURL: baseURL,
-  withCredentials: false, // Set to true only if using cookies/sessions
+  withCredentials: true, // Set to true only if using cookies/sessions
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'

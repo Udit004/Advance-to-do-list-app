@@ -1,21 +1,25 @@
 const express = require('express');
+console.log('Request received by todolist router');
 const router = express.Router();
 const todoController = require('../controller/todoController');
-const Notification = require('../models/notificationModel'); 
+const Notification = require('../models/notificationModel');
+const authMiddleware = require('../middleware/authMiddleware'); // Import the auth middleware
+const { io } = require('../index'); // Import io
+
 // Get all todos for a user
 router.get('/todos/:uid', todoController.getTodosByUser);
 
 // Create a new todo
-router.post('/create', todoController.createTodo);
+router.post('/create', authMiddleware, todoController.createTodo); // Apply authMiddleware
 
 // Toggle todo completion status
-router.patch('/toggle/:id', todoController.toggleTodoStatus);
+router.patch('/toggle/:id', authMiddleware, todoController.toggleTodoStatus); // Apply authMiddleware
 
 // Update todo priority
-router.patch('/priority/:id', todoController.updateTodoPriority);
+router.patch('/priority/:id', authMiddleware, todoController.updateTodoPriority); // Apply authMiddleware
 
 // Update a todo
-router.put('/update/:id', async (req, res) => {
+router.put('/update/:id', authMiddleware, async (req, res) => { // Apply authMiddleware
     try {
         const todoId = req.params.id;
         const updates = req.body;
@@ -35,11 +39,11 @@ router.put('/update/:id', async (req, res) => {
         await Notification.create({
             user: updatedTodo.user,
             todoId: updatedTodo._id,
-            message: `Todo Updated: "${updatedTodo.task}"`,
+            message: `Todo Updated: "${updatedTodo.task}"`, // Use updatedTodo.task
             type: 'todo_updated',
             read: false
         });
-        io.emit('newNotification', { userId: todo.user, message: `Your todo "${todo.task}" is update` });
+        io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is update` }); // Use updatedTodo.user and updatedTodo.task
 
     } catch (error) {
         console.error('Error updating todo:', error);
@@ -48,7 +52,7 @@ router.put('/update/:id', async (req, res) => {
 });
 
 // Delete a todo
-router.delete('/delete/:id', async (req, res) => {
+router.delete('/delete/:id', authMiddleware, async (req, res) => { // Apply authMiddleware
     try {
         const todoId = req.params.id;
         const Todo = require('../models/todo');
@@ -64,11 +68,11 @@ router.delete('/delete/:id', async (req, res) => {
         await Notification.create({
             user: deletedTodo.user,
             todoId: deletedTodo._id,
-            message: `Todo Updated: "${deletedTodo.task}"`,
+            message: `Todo Deleted: "${deletedTodo.task}"`, // Use deletedTodo.task
             type: 'todo_deleted',
             read: false
         });
-        io.emit('newNotification', { userId: todo.user, message: `Your todo "${todo.task}" is delete` });
+        io.emit('newNotification', { userId: deletedTodo.user, message: `Your todo "${deletedTodo.task}" is delete` }); // Use deletedTodo.user and deletedTodo.task
 
     } catch (error) {
         console.error('Error deleting todo:', error);

@@ -31,7 +31,9 @@ const NotificationBell = ({ userId }) => {
       setLoading(false); // Stop loading if no userId
     }
 
-    const socket = io(import.meta.env.VITE_API_URL);
+    const socket = io(import.meta.env.VITE_API_URL, {
+      withCredentials: true
+    });
 
     socket.on('newNotification', (notification) => {
       if (notification.userId === userId) {

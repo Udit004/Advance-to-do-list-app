@@ -1,4 +1,5 @@
 import React from 'react';
+import { Helmet } from "react-helmet";
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Home from './pages/Home';
 import TodoList from './pages/TodoList';
@@ -14,6 +15,12 @@ import Profile from './pages/Profile';
 const App = () => {
   return (
     <Router>
+      <Helmet>
+        <meta
+          name="google-site-verification"
+          content="SGSmDTkUcfGUOsfWJWVBksxsbCZptyQ15tqK1e-SF3M"
+        />
+      </Helmet>
       <AuthProvider>
         <ScrollToTop />
         <div className="min-h-screen bg-gradient-to-br from-[#1a1c2e] via-[#2a2d4c] to-[#0f1225] text-gray-100">
