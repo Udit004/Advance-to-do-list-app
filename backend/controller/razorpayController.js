@@ -1,14 +1,13 @@
-const razorpayConfig = require('../config/razorpay');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
-const razorpayConfig = require('../config/razorpay');
+
 const UserProfile = require('../models/userProfileModel');
 
 const initiatePayment = async (req, res) => {
     try {
         const instance = new Razorpay({
-            key_id: razorpayConfig.RAZORPAY_API_KEY,
-            key_secret: razorpayConfig.RAZORPAY_SECRET_KEY,
+            key_id: process.env.RAZORPAY_API_KEY,
+            key_secret: process.env.RAZORPAY_SECRET_KEY,
         });
 
         const options = {
