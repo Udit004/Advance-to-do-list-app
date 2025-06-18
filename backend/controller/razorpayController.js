@@ -33,7 +33,7 @@ const handleWebhook = async (req, res) => {
     try {
         console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const shasum = crypto.createHmac('sha256', process.env.RAZORPAY_SECRET_KEY);
-        shasum.update(JSON.stringify(req.body));
+        shasum.update(req.body.toString());
         const digest = shasum.digest('hex');
 
         console.log('Calculated digest:', digest);
