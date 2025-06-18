@@ -36,8 +36,8 @@ const handleWebhook = async (req, res) => {
         shasum.update(req.body);
         const digest = shasum.digest('hex');
 
-        console.log('Calculated digest:', digest);
-        console.log('Received signature:', req.headers['x-razorpay-signature']);
+        console.log('Calculated digest:', digest, 'Type:', typeof digest);
+        console.log('Received signature:', req.headers['x-razorpay-signature'], 'Type:', typeof req.headers['x-razorpay-signature']);
 
         if (digest === req.headers['x-razorpay-signature']) {
             console.log('Request is legit');
