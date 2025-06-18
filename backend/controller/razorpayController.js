@@ -1,6 +1,7 @@
 const razorpayConfig = require('../config/razorpay');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const razorpayConfig = require('../config/razorpay');
 const UserProfile = require('../models/userProfileModel');
 
 const initiatePayment = async (req, res) => {
