@@ -1,10 +1,11 @@
 const admin = require('firebase-admin');
-console.log('Auth Middleware executed');
 
 const authMiddleware = async (req, res, next) => {
   try {
+    console.log('Auth Middleware executed');
+    console.log('Request Headers:', req.headers); // Log all request headers
     const idToken = req.headers.authorization?.split('Bearer ')[1];
-    console.log('Received ID Token:', idToken); // Log the received ID token
+    console.log('Received ID Token:', idToken ? 'Token received' : 'No token received'); // Log if token is present
 
     if (!idToken) {
       return res.status(401).json({ message: 'No authentication token provided.' });
@@ -15,7 +16,7 @@ const authMiddleware = async (req, res, next) => {
     req.user = decodedToken;
     next();
   } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
+    console.error('Error verifying Firebase ID token:', error.message); // Log only the error message
     return res.status(403).json({ message: 'Invalid or expired authentication token.' });
   }
 };

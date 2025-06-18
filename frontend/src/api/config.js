@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { auth } from '../firebase'; // Import Firebase auth instance
 
 // Use VITE_API_URL from environment variables
 const baseURL = import.meta.env.VITE_API_URL;
@@ -14,10 +15,12 @@ const API = axios.create({
 
 // Request interceptor
 API.interceptors.request.use(
-  (config) => {
-    // Example: Add Authorization token if needed
-    // const token = localStorage.getItem('token');
-    // if (token) config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => Promise.reject(error)

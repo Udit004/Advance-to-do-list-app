@@ -26,6 +26,7 @@ const UserProfileSchema = new Mongoose.Schema(
       type: String,
     },
     profileImage: { type: String },
+    isPaid: { type: Boolean, default: false },
   },
   {
     timestamps: true, // Auto-manage createdAt and updatedAt

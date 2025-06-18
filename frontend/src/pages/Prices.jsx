@@ -1,8 +1,11 @@
 import React from 'react';
 import { Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { initiatePayment } from '../api/razorpayApi';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
-const PricingCard = ({ title, price, features, isPopular }) => (
+const PricingCard = ({ title, price, features, isPopular, onGetStarted }) => (
   <div className={`relative rounded-2xl p-8 ${isPopular ? 'bg-gradient-to-b from-[#1a1c2e]/90 to-[#2a2d4c]/90 text-white backdrop-blur-lg border border-white/10' : 'bg-white/5 backdrop-blur-md border border-white/5 dark:bg-gray-900/50'}`}>
     {isPopular && (
       <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full text-white text-sm font-medium">
@@ -19,13 +22,15 @@ const PricingCard = ({ title, price, features, isPopular }) => (
     <ul className="space-y-4 mb-8">
       {features.map((feature, index) => (
         <li key={index} className="flex items-center gap-3">
-          <Check className="text-green-500 flex-shrink-0" size={20} />
+          {/* Updated here: replaced size={20} with w-5 h-5 Tailwind classes */}
+          <Check className="text-green-500 flex-shrink-0 w-5 h-5" />
           <span className={`${isPopular ? 'text-gray-100' : 'text-gray-600 dark:text-gray-300'}`}>{feature}</span>
         </li>
       ))}
     </ul>
     <Button
       className={`w-full ${isPopular ? 'bg-white text-gray-900 hover:bg-gray-100' : 'bg-gradient-to-r from-[#1a1c2e] to-[#2a2d4c] text-white hover:opacity-90'}`}
+      onClick={onGetStarted}
     >
       Get Started
     </Button>
@@ -33,6 +38,52 @@ const PricingCard = ({ title, price, features, isPopular }) => (
 );
 
 const Prices = () => {
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+
+  const handlePayment = async (amount) => {
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const { data } = await initiatePayment(amount * 100); // Razorpay expects amount in paisa
+      const { order } = data;
+
+      console.log('VITE_RAZORPAY_KEY_ID:', import.meta.env.VITE_RAZORPAY_KEY_ID);
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Todo List App',
+        description: 'Pro Plan Subscription',
+        order_id: order.id,
+        handler: async () => {
+          // Payment successful, Razorpay webhook will update user status
+          navigate('/payment-success');
+        },
+        prefill: {
+          name: currentUser.displayName || '',
+          email: currentUser.email || '',
+        },
+        notes: {
+          userId: currentUser.uid,
+          plan: 'Pro',
+        },
+        theme: {
+          color: '#3399cc',
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (error) {
+      console.error('Error initiating payment:', error);
+      alert('Failed to initiate payment. Please try again.');
+    }
+  };
+
   const plans = [
     {
       title: 'Basic',
@@ -86,7 +137,7 @@ const Prices = () => {
         
         <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {plans.map((plan, index) => (
-            <PricingCard key={index} {...plan} />
+            <PricingCard key={index} {...plan} onGetStarted={plan.title === 'Pro' ? () => handlePayment(plan.price) : null} />
           ))}
         </div>
 

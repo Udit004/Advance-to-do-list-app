@@ -3,10 +3,13 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const userProfileRoutes = require('./routes/userProfileRoutes');
-
+const todoRoutes = require('./routes/todolist');
 const notificationRoutes = require('./routes/notificationRoutes');
+const razorpayRoutes = require('./routes/razorpayRoutes');
+const projectRoutes = require('./routes/projectRoutes');
 const connectDB = require('./config/db');
 const startNotificationCleanup = require('./scheduler/notificationScheduler');
+require('./config/firebase'); // Initialize Firebase Admin SDK
 
 
 // Load environment variables
@@ -66,8 +69,10 @@ server.listen(PORT, () => {
 module.exports = { io };
 
 // Routes that use the 'io' object should be required after 'io' is exported
-app.use('/api/todolist', require('./routes/todolist'));
-app.use('/api/notifications',notificationRoutes);
+app.use('/api/todos', todoRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/razorpay', bodyParser.raw({ type: 'application/json' }), razorpayRoutes);
+app.use('/api/projects', projectRoutes);
 
 const startNotificationScheduler = require('./scheduler/notificationScheduler');
 startNotificationScheduler(io);

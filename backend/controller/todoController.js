@@ -61,12 +61,21 @@ const createTodo = async (req, res) => {
 const getTodosByUser = async (req, res) => {
   try {
     const userId = req.params.uid;
+    const projectId = req.query.project; // Get project ID from query parameter
+    const excludeProjectTodos = req.query.excludeProjectTodos === 'true'; // New parameter
 
     if (!userId) {
       return res.status(400).json({ message: "User ID is required" });
     }
 
-    const todos = await Todo.find({ user: userId });
+    let query = { user: userId };
+    if (projectId) {
+      query.project = projectId; // Add project filter if projectId is provided
+    } else if (excludeProjectTodos) {
+      query.project = { $exists: false }; // Exclude todos with a project field
+    }
+
+    const todos = await Todo.find(query);
 
     res.status(200).json(todos);
   } catch (error) {
@@ -129,12 +138,17 @@ const toggleTodoStatus = async (req, res) => {
       io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is completed` });
 
       // Send email for task completion
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: req.user.email,
-        subject: 'Todo Completed',
-        html: `<p>Your task <strong>${updatedTodo.task}</strong> has been marked as completed!</p>`
-      });
+      try {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: req.user.email,
+          subject: 'Todo Completed',
+          html: `<p>Your task <strong>${updatedTodo.task}</strong> has been marked as completed!</p>`
+        });
+      } catch (emailError) {
+        console.error('Error sending todo completion email:', emailError);
+        // Continue processing even if email sending fails
+      }
     }
     res.status(200).json({
       success: true,

@@ -11,6 +11,11 @@ import Footer from './components/Footer';
 import Prices from './pages/Prices';
 import ScrollToTop from './components/ScrollToTop';
 import Profile from './pages/Profile';
+import ProjectList from './pages/ProjectList';
+import ProjectTodo from './pages/ProjectTodo';
+import TodoDashboard from './pages/TodoDashboard';
+import PaymentSuccess from './pages/PaymentSuccess';
+
 
 const App = () => {
   return (
@@ -33,6 +38,10 @@ const App = () => {
               <Route path="/signup" element={<Signup />} />
               <Route path="/Profile" element={<Profile/>}/>
               <Route path="/prices" element={<Prices />} />
+              <Route path="/projects" element={<ProjectList />} />
+              <Route path="/project/:projectId/todos" element={<ProjectTodo />} />
+              <Route path="/TodoDashboard" element={<TodoDashboard/>}/>
+              <Route path="/payment-success" element={<PaymentSuccess />} />
             </Routes>
           </main>
           <Footer/>
