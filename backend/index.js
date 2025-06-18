@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { handleWebhook } = require('./controller/razorpayController');
 const dotenv = require('dotenv');
 const userProfileRoutes = require('./routes/userProfileRoutes');
 const todoRoutes = require('./routes/todolist');
@@ -30,8 +31,8 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 
 // Middleware for parsing request bodies
-// app.use(bodyParser.json());
-// app.use(bodyParser.urlencoded({ extended: true }));
+// This must come BEFORE app.use(express.json())
+app.post('/api/razorpay/webhook', bodyParser.raw({ type: 'application/json' }), handleWebhook);
 
 // Configure CORS
 app.use(cors({
@@ -41,7 +42,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
-// Parse JSON request body
+// Parse JSON request body for all other routes
 app.use(express.json());
 app.use((req, res, next) => {
   console.log(`Incoming Request: ${req.method} ${req.originalUrl}`);
@@ -71,7 +72,7 @@ module.exports = { io };
 // Routes that use the 'io' object should be required after 'io' is exported
 app.use('/api/todos', todoRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/razorpay', bodyParser.raw({ type: 'application/json' }), razorpayRoutes);
+app.use('/api/razorpay', razorpayRoutes);
 app.use('/api/projects', projectRoutes);
 
 const startNotificationScheduler = require('./scheduler/notificationScheduler');

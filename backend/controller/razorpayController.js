@@ -33,7 +33,7 @@ const handleWebhook = async (req, res) => {
     try {
         console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const shasum = crypto.createHmac('sha256', process.env.RAZORPAY_SECRET_KEY);
-        shasum.update(req.body.toString());
+        shasum.update(req.body);
         const digest = shasum.digest('hex');
 
         console.log('Calculated digest:', digest);
@@ -42,7 +42,7 @@ const handleWebhook = async (req, res) => {
         if (digest === req.headers['x-razorpay-signature']) {
             console.log('Request is legit');
             // Process the payment
-            const { event, payload: razorpayPayload } = req.body;
+            const { event, payload: razorpayPayload } = JSON.parse(req.body.toString());
             if (event === 'payment.captured') {
                 console.log('Payment captured event received.');
                 const payment = razorpayPayload.payment.entity;
