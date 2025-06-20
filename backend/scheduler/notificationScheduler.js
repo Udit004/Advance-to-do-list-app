@@ -2,8 +2,10 @@ const cron = require('node-cron');
 const Todo = require('../models/todo');
 const Notification = require('../models/notificationModel');
 
-// Accept io as an argument
-const startNotificationScheduler = (io) => {
+const { getIo } = require('../socket');
+
+const startNotificationScheduler = () => {
+  const io = getIo();
 
   cron.schedule('*/1 * * * *', async () => {
     const now = new Date();

@@ -117,7 +117,7 @@ const TodoList = () => {
     try {
       if (editingTodo) {
         const response = await API.put(
-          `/todolist/update/${editingTodo._id}`,
+          `/todos/update/${editingTodo._id}`,
           formData
         );
         if (response.data) {
@@ -131,7 +131,7 @@ const TodoList = () => {
         console.log("Todo updated successfully", response.data);
         console.log("Response from update:", response);
       } else {
-        const response = await API.post("/todolist/create", {
+        const response = await API.post("/todos/create", {
           ...formData,
           user: currentUser?.uid,
         });
@@ -166,7 +166,7 @@ const TodoList = () => {
 
   const handleDelete = async (id) => {
     try {
-      const DeleteTodo = await API.delete(`/todolist/delete/${id}`);
+      const DeleteTodo = await API.delete(`/todos/delete/${id}`);
       setTasks((prevTasks) => prevTasks.filter((task) => task._id !== id));
       console.log("Todo deleted successfully", DeleteTodo);
     } catch (error) {
@@ -176,7 +176,7 @@ const TodoList = () => {
 
   const handleToggleComplete = async (id, isChecked) => {
     try {
-      const response = await API.patch(`/todolist/toggle/${id}`, {
+      const response = await API.patch(`/todos/toggle/${id}`, {
         isCompleted: isChecked,
       });
       setTasks((prevTasks) =>

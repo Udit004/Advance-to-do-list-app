@@ -6,8 +6,6 @@ const bodyParser = require('body-parser');
 const http = require('http');
 const { handleWebhook } = require('./controller/razorpayController');
 const userProfileRoutes = require('./routes/userProfileRoutes');
-const todoRoutes = require('./routes/todolist');
-const notificationRoutes = require('./routes/notificationRoutes');
 const razorpayRoutes = require('./routes/razorpayRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const connectDB = require('./config/db');
@@ -15,15 +13,9 @@ require('./config/firebase');
 
 const app = express();
 const server = http.createServer(app);
-const { Server } = require('socket.io');
+const { initializeSocket, getIo } = require('./socket');
 
-const io = new Server(server, {
-  cors: {
-    origin: ["http://localhost:5173", "https://advance-to-do-list-app.vercel.app"],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    credentials: true,
-  }
-});
+const io = initializeSocket(server);
 
 const PORT = process.env.PORT || 5000;
 
@@ -52,10 +44,13 @@ app.use((req, res, next) => {
 connectDB();
 
 // Routes
+const todoRoutes = require('./routes/todolist');
+const notificationRoutes = require('./routes/notificationRoutes');
+
 app.use('/api/user', userProfileRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/razorpay', razorpayRoutes); // This contains /initiate-payment
+app.use('/api/razorpay', razorpayRoutes);
 app.use('/api/projects', projectRoutes);
 
 app.get('/', (_, res) => res.send('🖐️ Hello from Express backend!'));
@@ -67,9 +62,9 @@ app.use((err, req, res, next) => {
 });
 
 // Socket + Scheduler
-module.exports = { io };
+// module.exports = { io }; // No longer needed as getIo is used
 const startNotificationScheduler = require('./scheduler/notificationScheduler');
-startNotificationScheduler(io);
+startNotificationScheduler();
 
 // Start Server
 server.listen(PORT, () => {

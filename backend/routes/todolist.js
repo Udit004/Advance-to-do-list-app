@@ -4,7 +4,8 @@ const router = express.Router();
 const todoController = require('../controller/todoController');
 const Notification = require('../models/notificationModel');
 const authMiddleware = require('../middleware/authMiddleware'); // Import the auth middleware
-const { io } = require('../index'); // Import io
+const { getIo } = require('../socket'); // Import getIo
+const io = getIo(); // Get the initialized io instance
 
 // Get all todos for a user
 router.get('/:uid', todoController.getTodosByUser);

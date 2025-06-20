@@ -1,7 +1,8 @@
 // Import Mongoose model
 const Todo = require('../models/todo');
 const Notification = require('../models/notificationModel');
-const { io } = require('../index');
+const { getIo } = require('../socket');
+const io = getIo();
 const transporter = require('../config/email'); // Import the transporter
 
 // POST - Create new todo
