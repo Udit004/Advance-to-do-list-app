@@ -9,4 +9,4 @@ API.interceptors.request.use((req) => {
     return req;
 });
 
-export const initiatePayment = (amount) => API.post('/razorpay/initiate-payment', { amount });
+export const initiatePayment = (paymentData) => API.post('/razorpay/initiate-payment', paymentData);

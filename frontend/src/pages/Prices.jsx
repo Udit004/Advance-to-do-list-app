@@ -22,7 +22,6 @@ const PricingCard = ({ title, price, features, isPopular, onGetStarted }) => (
     <ul className="space-y-4 mb-8">
       {features.map((feature, index) => (
         <li key={index} className="flex items-center gap-3">
-          {/* Updated here: replaced size={20} with w-5 h-5 Tailwind classes */}
           <Check className="text-green-500 flex-shrink-0 w-5 h-5" />
           <span className={`${isPopular ? 'text-gray-100' : 'text-gray-600 dark:text-gray-300'}`}>{feature}</span>
         </li>
@@ -41,17 +40,29 @@ const Prices = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
 
-  const handlePayment = async (amount) => {
+  const handlePayment = async (price) => {
     if (!currentUser) {
       navigate('/login');
       return;
     }
 
     try {
-      const { data } = await initiatePayment(amount * 100); // Razorpay expects amount in paisa
+      // Ensure Razorpay SDK is loaded
+      if (!window.Razorpay) {
+        alert("Razorpay SDK failed to load. Please refresh the page.");
+        return;
+      }
+
+      const amountInPaise = parseFloat(price) * 100;
+
+      const { data } = await initiatePayment({
+        amount: amountInPaise,
+        userId: currentUser.uid,
+        plan: 'Pro'
+      });
+
       const { order } = data;
 
-      console.log('VITE_RAZORPAY_KEY_ID:', import.meta.env.VITE_RAZORPAY_KEY_ID);
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: order.amount,
@@ -60,7 +71,6 @@ const Prices = () => {
         description: 'Pro Plan Subscription',
         order_id: order.id,
         handler: async () => {
-          // Payment successful, Razorpay webhook will update user status
           navigate('/payment-success');
         },
         prefill: {
@@ -73,10 +83,17 @@ const Prices = () => {
         },
         theme: {
           color: '#3399cc',
-        },
+        }
       };
 
       const rzp = new window.Razorpay(options);
+
+      // Optional: Handle payment failure
+      rzp.on('payment.failed', function (response) {
+        console.error('Payment failed:', response.error);
+        alert('Payment failed: ' + response.error.description);
+      });
+
       rzp.open();
     } catch (error) {
       console.error('Error initiating payment:', error);
@@ -134,10 +151,14 @@ const Prices = () => {
             Choose the perfect plan for your needs. All plans include a 14-day free trial.
           </p>
         </div>
-        
+
         <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
           {plans.map((plan, index) => (
-            <PricingCard key={index} {...plan} onGetStarted={plan.title === 'Pro' ? () => handlePayment(plan.price) : null} />
+            <PricingCard
+              key={index}
+              {...plan}
+              onGetStarted={plan.title === 'Pro' ? () => handlePayment(plan.price) : () => alert('This plan is not purchasable directly. Contact support.')}
+            />
           ))}
         </div>
 
@@ -150,7 +171,7 @@ const Prices = () => {
             </div>
             <div className="bg-white/5 backdrop-blur-md rounded-lg p-6 border border-white/5">
               <h3 className="text-lg font-semibold text-white mb-3">What payment methods do you accept?</h3>
-              <p className="text-gray-300">We accept all major credit cards, PayPal, and bank transfers for enterprise customers.</p>
+              <p className="text-gray-300">We accept all major credit cards, UPI, wallets, and net banking via Razorpay.</p>
             </div>
             <div className="bg-white/5 backdrop-blur-md rounded-lg p-6 border border-white/5">
               <h3 className="text-lg font-semibold text-white mb-3">Is there a free trial?</h3>

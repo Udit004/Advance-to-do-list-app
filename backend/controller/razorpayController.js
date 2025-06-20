@@ -1,14 +1,16 @@
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const UserProfile = require('../models/userProfileModel');
+const { log } = require('console');
 
-// Initialize Razorpay instance with your secret credentials
 const instance = new Razorpay({
   key_id: process.env.RAZORPAY_API_KEY,
-  key_secret: process.env.RAZORPAY_SECRET_KEY,
+  key_secret: process.env.RAZORPAY_SECRET_KEY, // ✅ CORRECT!
 });
 
-// Route: POST /api/razorpay/initiate-payment
+
+
+
 const initiatePayment = async (req, res) => {
   try {
     const { amount, userId, plan } = req.body;
@@ -18,7 +20,7 @@ const initiatePayment = async (req, res) => {
     }
 
     const options = {
-      amount, // amount in paise (e.g., 999 means ₹9.99)
+      amount: parseInt(amount), // Ensure amount is a number in paise
       currency: 'INR',
       receipt: `receipt_order_${Date.now()}`,
       notes: {
@@ -37,16 +39,17 @@ const initiatePayment = async (req, res) => {
   }
 };
 
-// Route: POST /api/razorpay/webhook
 const handleWebhook = async (req, res) => {
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers['x-razorpay-signature'];
 
-    const body = req.body; // raw body expected via bodyParser.raw
+    console.log('🔔 Webhook raw body:', req.body);
+    console.log('🔐 Signature header:', signature);
+
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
-      .update(body)
+      .update(req.body)
       .digest('hex');
 
     if (signature !== expectedSignature) {
@@ -54,7 +57,7 @@ const handleWebhook = async (req, res) => {
       return res.status(400).json({ message: 'Invalid signature' });
     }
 
-    const data = JSON.parse(body.toString()); // Convert raw buffer to JSON object
+    const data = JSON.parse(req.body.toString());
     console.log('✅ Valid webhook received:', data.event);
 
     if (data.event === 'payment.captured') {
