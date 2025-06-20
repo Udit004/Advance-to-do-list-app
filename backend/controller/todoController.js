@@ -219,9 +219,71 @@ const updateTodoPriority = async (req, res) => {
 
 
 
+// PUT - Update a todo
+const updateTodo = async (req, res) => {
+  try {
+    const todoId = req.params.id;
+    const updates = req.body;
+
+    const updatedTodo = await Todo.findByIdAndUpdate(
+      todoId,
+      updates,
+      { new: true }
+    );
+
+    if (!updatedTodo) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    res.json(updatedTodo);
+    await Notification.create({
+      user: updatedTodo.user,
+      todoId: updatedTodo._id,
+      message: `Todo Updated: "${updatedTodo.task}"`, // Use updatedTodo.task
+      type: 'todo_updated',
+      read: false
+    });
+    io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is update` }); // Use updatedTodo.user and updatedTodo.task
+
+  } catch (error) {
+    console.error('Error updating todo:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// DELETE - Delete a todo
+const deleteTodo = async (req, res) => {
+  try {
+    const todoId = req.params.id;
+
+    const deletedTodo = await Todo.findByIdAndDelete(todoId);
+
+    if (!deletedTodo) {
+      return res.status(404).json({ error: 'Todo not found' });
+    }
+
+    res.json({ message: 'Todo deleted successfully' });
+
+    await Notification.create({
+      user: deletedTodo.user,
+      todoId: deletedTodo._id,
+      message: `Todo Deleted: "${deletedTodo.task}"`, // Use deletedTodo.task
+      type: 'todo_deleted',
+      read: false
+    });
+    io.emit('newNotification', { userId: deletedTodo.user, message: `Your todo "${deletedTodo.task}" is delete` }); // Use deletedTodo.user and deletedTodo.task
+
+  } catch (error) {
+    console.error('Error deleting todo:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
 module.exports = {
   createTodo,
   getTodosByUser,
   toggleTodoStatus,
-  updateTodoPriority
+  updateTodoPriority,
+  updateTodo,
+  deleteTodo,
 };

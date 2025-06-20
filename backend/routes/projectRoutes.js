@@ -5,18 +5,18 @@ const protect = require('../middleware/authMiddleware');
 const isPaidUser = require('../middleware/isPaidMiddleware');
 
 // Create a new project
-router.post('/create', protect, isPaidUser, projectController.createProject);
+router.post('/create', protect, projectController.createProject);
 
 // Get all projects for a user
-router.get('/user/:uid', protect, isPaidUser, projectController.getProjectsByUser);
+router.get('/user/:uid', protect, projectController.getProjectsByUser);
 
 // Get a single project by ID
-router.get('/:id', protect, isPaidUser, projectController.getProjectById);
+router.get('/:id', protect, projectController.getProjectById);
 
 // Update a project
-router.put('/update/:id', protect, isPaidUser, projectController.updateProject);
+router.put('/update/:id', protect, projectController.updateProject);
 
 // Delete a project
-router.delete('/delete/:id', protect, isPaidUser, projectController.deleteProject);
+router.delete('/delete/:id', protect, projectController.deleteProject);
 
 module.exports = router;

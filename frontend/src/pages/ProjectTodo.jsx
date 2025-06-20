@@ -30,7 +30,7 @@ const ProjectTodo = () => {
         setProject(projectResponse.data);
 
         // Fetch todos for the project
-        const todosResponse = await API.get(`/todolist/todos/${currentUser.uid}?project=${projectId}`);
+        const todosResponse = await API.get(`/todos/${currentUser.uid}?project=${projectId}`);
         setTasks(todosResponse.data);
       } catch (error) {
         console.error('Error fetching project data:', error);
@@ -54,7 +54,7 @@ const ProjectTodo = () => {
     try {
       if (editingTodo) {
         const response = await API.put(
-          `/todolist/update/${editingTodo._id}`,
+          `/todos/update/${editingTodo._id}`,
           formData
         );
         if (response.data) {
@@ -66,7 +66,7 @@ const ProjectTodo = () => {
         }
         setEditingTodo(null);
       } else {
-        const response = await API.post('/todolist/create', {
+        const response = await API.post('/todos/create', {
           ...formData,
           user: currentUser.uid,
           project: projectId, // Associate todo with the project
@@ -98,7 +98,7 @@ const ProjectTodo = () => {
 
   const handleDelete = async (id) => {
     try {
-      await API.delete(`/todolist/delete/${id}`);
+      await API.delete(`/todos/delete/${id}`);
       setTasks((prevTasks) => prevTasks.filter((task) => task._id !== id));
     } catch (error) {
       console.error('Error deleting todo:', error);
@@ -107,7 +107,7 @@ const ProjectTodo = () => {
 
   const handleToggleComplete = async (id, isChecked) => {
     try {
-      const response = await API.patch(`/todolist/toggle/${id}`, {
+      const response = await API.patch(`/todos/toggle/${id}`, {
         isCompleted: isChecked,
       });
       setTasks((prevTasks) =>
