@@ -63,14 +63,28 @@ const handleWebhook = async (req, res) => {
     if (data.event === 'payment.captured') {
       const payment = data.payload.payment.entity;
       const userId = payment.notes?.userId;
-
+    
       if (userId) {
-        await UserProfile.findByIdAndUpdate(userId, { isPaid: true });
-        console.log(`✅ User ${userId} is now marked as paid.`);
+        try {
+          const updatedUser = await UserProfile.findOneAndUpdate(
+            { uid: userId },
+            { isPaid: true },
+            { new: true }
+          );
+    
+          if (updatedUser) {
+            console.log(`✅ User with UID ${userId} is now marked as paid.`);
+          } else {
+            console.warn(`⚠️ No user found in DB with UID: ${userId}`);
+          }
+        } catch (err) {
+          console.error('❌ Error updating user payment status:', err.message);
+        }
       } else {
         console.warn('⚠️ No userId found in payment notes.');
       }
     }
+    
 
     res.status(200).json({ status: 'ok' });
   } catch (error) {
