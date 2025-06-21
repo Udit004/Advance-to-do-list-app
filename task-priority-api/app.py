@@ -2,11 +2,10 @@ import os, joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-CORS(app, resources={r"/predict": {"origins": "https://advance-to-do-list-app.vercel.app"}}, supports_credentials=True)
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/predict": {"origins": ["https://advance-to-do-list-app.vercel.app", "http://localhost:5173"]}}, supports_credentials=True)
 
 model_path = os.path.join(os.path.dirname(__file__), "priority_model.pkl")
 

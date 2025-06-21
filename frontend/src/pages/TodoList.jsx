@@ -37,7 +37,7 @@ const TodoList = () => {
       
       const mlModelUrl = import.meta.env.MODE === 'development' 
         ? "http://127.0.0.1:5000/predict" 
-          : "https://advance-to-do-list-app-priority-ml-model.onrender.com/predict";
+        : import.meta.env.VITE_ML_MODEL_API_URL;
       const inputText = `${trimmedTask} ${trimmedDescription}`.trim();
       const response = await API.post(mlModelUrl, { text: inputText });
       const predicted = response.data.priority;
