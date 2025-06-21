@@ -26,7 +26,7 @@ const TodoList = () => {
       setIsPredicting(true);
 
       // If task or description is empty, set priority to low and skip API call
-      if (!task && !description) {
+      if (!task || !description) {
         setPredictedPriority("low");
         setIsPredicting(false);
         return "low";
@@ -52,7 +52,7 @@ const TodoList = () => {
   // Auto-trigger prediction when task or description changes
   useEffect(() => {
     const debounce = setTimeout(() => {
-      if (formData.task || formData.description) {
+      if (formData.task && formData.description) {
         predictPriority(formData.task, formData.description);
       }
     }, 700);
