@@ -2,15 +2,14 @@ import os
 from flask import Flask, request, jsonify
 import joblib
 from flask_cors import CORS
-import pickle
-import numpy as np
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS so your React app can call this API
 
 # Load the trained model
-model = joblib.load("priority_model.pkl")
+model_path = os.path.join(os.path.dirname(__file__), "priority_model.pkl")
+model = joblib.load(model_path)
 
 @app.route('/')
 def home():
@@ -29,10 +28,6 @@ def predict():
     prediction = model.predict([task_text])[0]
 
     return jsonify({"priority": prediction})
-
-# # Run the app
-# if __name__ == '__main__':
-#     app.run(debug=True)
 
 # Add this block for Render to detect port
 if __name__ == "__main__":
