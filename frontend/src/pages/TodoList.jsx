@@ -25,8 +25,11 @@ const TodoList = () => {
     try {
       setIsPredicting(true);
 
-      // If task or description is empty, set priority to low and skip API call
-      if (!task || !description) {
+      const trimmedTask = task.trim();
+      const trimmedDescription = description.trim();
+
+      // If task or description is empty (or only whitespace), set priority to low and skip API call
+      if (!trimmedTask || !trimmedDescription) {
         setPredictedPriority("low");
         setIsPredicting(false);
         return "low";
@@ -35,7 +38,8 @@ const TodoList = () => {
       const mlModelUrl = import.meta.env.MODE === 'development' 
         ? "http://127.0.0.1:5000/predict" 
           : "https://advance-to-do-list-app-priority-ml-model.onrender.com/predict";
-      const response = await API.post(mlModelUrl, { task, description });
+      const inputText = `${trimmedTask} ${trimmedDescription}`.trim();
+      const response = await API.post(mlModelUrl, { text: inputText });
       const predicted = response.data.priority;
       
       setPredictedPriority(predicted);
@@ -52,7 +56,7 @@ const TodoList = () => {
   // Auto-trigger prediction when task or description changes
   useEffect(() => {
     const debounce = setTimeout(() => {
-      if (formData.task && formData.description) {
+      if (formData.task || formData.description) {
         predictPriority(formData.task, formData.description);
       }
     }, 700);
