@@ -24,6 +24,13 @@ const TodoList = () => {
   const predictPriority = async (task, description) => {
     try {
       setIsPredicting(true);
+
+      // If task or description is empty, set priority to low and skip API call
+      if (!task && !description) {
+        setPredictedPriority("low");
+        setIsPredicting(false);
+        return "low";
+      }
       
       const mlModelUrl = import.meta.env.MODE === 'development' 
         ? "http://127.0.0.1:5000/predict" 
