@@ -5,7 +5,7 @@ from flask_cors import CORS
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS so your React app can call this API
+CORS(app, supports_credentials=True)  # Enable CORS so your React app can call this API
 
 # Load the trained model
 model_path = os.path.join(os.path.dirname(__file__), "priority_model.pkl")
