@@ -2,16 +2,14 @@ import os, joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-
-
 app = Flask(__name__)
 CORS(app, resources={r"/predict": {"origins": ["https://advance-to-do-list-app.vercel.app", "http://localhost:5173"]}}, supports_credentials=True)
 
 model_path = os.path.join(os.path.dirname(__file__), "priority_model.pkl")
 
 try:
-    model = joblib.load(model_path)
-    print("[✅] Model loaded successfully:", model)
+    model = joblib.load(model_path)  # model should include vectorizer in pipeline
+    print("[✅] Model pipeline loaded successfully.")
 except Exception as e:
     print("[❌] Could not load model:", e)
     raise
