@@ -55,3 +55,6 @@ nbproject
 
 # Local Netlify folder
 .netlify
+
+# Python virtual environment
+/task-priority-api/venv/
