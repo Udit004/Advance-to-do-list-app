@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
-import  API from "../api/config";
+import API from "../api/config";
+
 import AuthContext from "../context/AuthContext";
 
 const TodoList = () => {
@@ -24,17 +25,9 @@ const TodoList = () => {
     try {
       setIsPredicting(true);
       
-      // Mock ML prediction logic
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const text = `${task} ${description}`.toLowerCase();
-      let predicted = "low";
-      
-      if (text.includes("urgent") || text.includes("important") || text.includes("deadline") || text.includes("meeting") || text.includes("presentation")) {
-        predicted = "high";
-      } else if (text.includes("review") || text.includes("plan") || text.includes("prepare") || text.includes("organize")) {
-        predicted = "medium";
-      }
+      const mlModelUrl = "https://advance-to-do-list-app-priority-ml-model.onrender.com/predict";
+      const response = await API.post(mlModelUrl, { task, description });
+      const predicted = response.data.priority;
       
       setPredictedPriority(predicted);
       return predicted;
