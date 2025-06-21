@@ -2,6 +2,9 @@ import os, joblib
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+CORS(app, resources={r"/predict": {"origins": "https://advance-to-do-list-app.vercel.app"}}, supports_credentials=True)
+
+
 app = Flask(__name__)
 CORS(app)
 
