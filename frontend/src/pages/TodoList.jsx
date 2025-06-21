@@ -25,7 +25,9 @@ const TodoList = () => {
     try {
       setIsPredicting(true);
       
-      const mlModelUrl = "https://advance-to-do-list-app-priority-ml-model.onrender.com/predict";
+      const mlModelUrl = import.meta.env.MODE === 'development' 
+        ? "http://127.0.0.1:5000/predict" 
+          : "https://advance-to-do-list-app-priority-ml-model.onrender.com/predict";
       const response = await API.post(mlModelUrl, { task, description });
       const predicted = response.data.priority;
       
