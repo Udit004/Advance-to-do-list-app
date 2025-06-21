@@ -2,9 +2,9 @@ services:
   task-priority-api:
     type: web
     runtime: python
-    pythonVersion: "3.10.13"
     buildCommand: "pip install -r task-priority-api/requirements.txt"
     startCommand: "gunicorn task-priority-api.app:app"
+    pythonVersion: "3.10.13"
     envVars:
       - key: PYTHON_VERSION
         value: "3.10.13"
