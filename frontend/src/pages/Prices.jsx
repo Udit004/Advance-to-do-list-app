@@ -54,8 +54,8 @@ const Prices = () => {
 
       const amountInPaise = parseFloat(price) * 100;
 
-      // Use the correct API endpoint structure based on your backend
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://advance-to-do-list-app.vercel.app';
+      // Use the correct backend URL - it appears your backend is on Render, not Vercel
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://advance-to-do-list-app-1.onrender.com';
       
       console.log('Initiating payment with:', {
         amount: amountInPaise,
