@@ -8,8 +8,10 @@ const { handleWebhook } = require('./controller/razorpayController');
 const userProfileRoutes = require('./routes/userProfileRoutes');
 const razorpayRoutes = require('./routes/razorpayRoutes');
 const projectRoutes = require('./routes/projectRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 const connectDB = require('./config/db');
 require('./config/firebase');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -52,6 +54,7 @@ app.use('/api/todos', todoRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/razorpay', razorpayRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/', (_, res) => res.send('🖐️ Hello from Express backend!'));
 
