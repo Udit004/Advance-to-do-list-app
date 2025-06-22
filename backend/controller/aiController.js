@@ -1,5 +1,3 @@
-// controllers/aiController.js
-
 const axios = require('axios');
 
 const aiPromptHandler = async (req, res) => {
@@ -18,7 +16,7 @@ const aiPromptHandler = async (req, res) => {
           {
             role: "system",
             content: `You are a helpful AI assistant that converts natural language into structured to-do JSON.
-Output must ONLY be JSON with these fields:
+Respond ONLY with JSON in this exact format:
 {
   "title": "string",
   "description": "string",
@@ -26,7 +24,7 @@ Output must ONLY be JSON with these fields:
   "priority": "low|medium|high",
   "category": "personal|work|college|other"
 }
-Do not include any explanation or extra text.`,
+Do not explain anything. Do not include markdown or extra characters. ONLY return raw JSON.`,
           },
           {
             role: "user",
@@ -36,7 +34,7 @@ Do not include any explanation or extra text.`,
       },
       {
         headers: {
-          "Authorization": `Bearer YOUR_OPENROUTER_API_KEY`, // Use .env in production
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
       }
@@ -46,7 +44,26 @@ Do not include any explanation or extra text.`,
 
     let taskData;
     try {
-      taskData = JSON.parse(content);
+      const jsonMatch = content.match(/```json\s*([\s\S]*?)```|({[\s\S]*})/);
+      if (!jsonMatch) throw new Error("No valid JSON found in AI response.");
+
+      const cleaned = jsonMatch[1] || jsonMatch[0];
+      taskData = JSON.parse(cleaned.trim());
+
+      // === ✅ Map AI category to your schema ===
+      const categoryMap = {
+        personal: 'general',
+        work: 'work',
+        college: 'education',
+        other: 'general',
+        groceries: 'groceries',
+        house: 'house'
+      };
+
+      taskData.category = taskData.category?.toLowerCase();
+      taskData.list = categoryMap[taskData.category] || 'general';
+      delete taskData.category; // remove raw category to avoid confusion
+
     } catch (err) {
       return res.status(500).json({
         error: "AI response was not valid JSON.",

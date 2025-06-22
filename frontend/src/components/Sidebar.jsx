@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { List, FolderOpen, Menu, X } from 'lucide-react';
+import { List, FolderOpen, Menu, X, Sparkles } from 'lucide-react';
 
 const Sidebar = () => {
   const [activeItem, setActiveItem] = useState('todoList');
@@ -15,6 +15,11 @@ const Sidebar = () => {
       id: 'projectTodo',
       label: 'Project Todo',
       icon: FolderOpen,
+    },
+    {
+      id: 'aiCreator',
+      label: 'AI Creator',
+      icon: Sparkles,
     }
   ];
 

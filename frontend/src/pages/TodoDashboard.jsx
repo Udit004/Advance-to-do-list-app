@@ -1,12 +1,14 @@
 import React, { useState } from "react";
-import { List, FolderOpen, Menu, X } from "lucide-react";
+import { List, FolderOpen, Menu, X, Sparkles } from "lucide-react";
 
 // Import your separate components here when using in your project
 // Example: import TodoList from './TodoList';
 // Example: import ProjectTodo from './ProjectTodo';
+// Example: import AICreator from './AICreator';
 
 import TodoList from "./TodoList";
 import ProjectTodo from "./ProjectList";
+import AICreator from "./AICreator";
 
 const Sidebar = ({ isExpanded, setIsExpanded, activeItem, setActiveItem }) => {
   const menuItems = [
@@ -19,6 +21,11 @@ const Sidebar = ({ isExpanded, setIsExpanded, activeItem, setActiveItem }) => {
       id: "projectTodo",
       label: "Project Todo",
       icon: FolderOpen,
+    },
+    {
+      id: "aiCreator",
+      label: "AI Creator",
+      icon: Sparkles,
     },
   ];
 
@@ -119,11 +126,11 @@ const TodoDashboard = () => {
   const renderMainContent = () => {
     switch (activeItem) {
       case "todoList":
-        // return <TodoList />;
         return <TodoList />;
       case "projectTodo":
-        // return <ProjectTodo />;
         return <ProjectTodo />;
+      case "aiCreator":
+        return <AICreator />;
       default:
         return (
           <div className="p-8">
