@@ -112,6 +112,16 @@ const TodoList = () => {
     }
   }, []);
 
+  // Handle search input change
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+  }, []);
+
+  // Handle filter change
+  const handleFilterChange = useCallback((newFilter) => {
+    setFilter(newFilter);
+  }, []);
+
   // Computed values
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter(task => task.isCompleted).length;
@@ -171,7 +181,10 @@ const TodoList = () => {
         <ProgressBar totalTasks={totalTasks} completedTasks={completedTasks} />
         
         {/* Search Input */}
-        <SearchInput searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
+        <SearchInput 
+          searchTerm={searchTerm} 
+          onSearchChange={handleSearchChange} 
+        />
 
         {/* Todo Form */}
         <TodoForm 
@@ -182,7 +195,10 @@ const TodoList = () => {
         />
 
         {/* Filters */}
-        <TodoFilters filter={filter} setFilter={setFilter} />
+        <TodoFilters 
+          currentFilter={filter} 
+          onFilterChange={handleFilterChange} 
+        />
 
         {/* Tasks List */}
         <div className="space-y-4">
