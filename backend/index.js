@@ -4,7 +4,6 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
-const { handleWebhook } = require('./controller/razorpayController');
 const userProfileRoutes = require('./routes/userProfileRoutes');
 const razorpayRoutes = require('./routes/razorpayRoutes');
 const projectRoutes = require('./routes/projectRoutes');
@@ -31,18 +30,22 @@ app.use(cors({
 // Logging middleware
 app.use((req, res, next) => {
   console.log(`Incoming Request: ${req.method} ${req.originalUrl}`);
+  console.log('Headers:', req.headers);
   next();
 });
 
 // Connect DB
 connectDB();
 
-// Routes
+// IMPORTANT: Razorpay routes MUST come before express.json() middleware
+// because webhook needs raw body, but other routes need parsed JSON
+app.use('/api/razorpay', razorpayRoutes);
+
+// Other routes with JSON parsing
+app.use(express.json());
+
 const todoRoutes = require('./routes/todolist');
 const notificationRoutes = require('./routes/notificationRoutes');
-
-// Regular routes with JSON parsing
-app.use(express.json());
 
 app.use('/api/user', userProfileRoutes);
 app.use('/api/todos', todoRoutes);
@@ -50,14 +53,11 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/ai', aiRoutes);
 
-// Razorpay routes - this will handle both /initiate-payment and /webhook
-app.use('/api/razorpay', razorpayRoutes);
-
 app.get('/', (_, res) => res.send('🖐️ Hello from Express backend!'));
 
 // Error Handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Express Error:', err.stack);
   res.status(500).send('Something broke! Check logs.');
 });
 
@@ -68,4 +68,8 @@ startNotificationScheduler();
 // Start Server
 server.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`🔧 Environment variables check:`);
+  console.log(`   - RAZORPAY_API_KEY: ${process.env.RAZORPAY_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   - RAZORPAY_SECRET_KEY: ${process.env.RAZORPAY_SECRET_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`   - RAZORPAY_WEBHOOK_SECRET: ${process.env.RAZORPAY_WEBHOOK_SECRET ? '✅ Set' : '❌ Missing'}`);
 });
