@@ -37,8 +37,9 @@ app.use((req, res, next) => {
 // Connect DB
 connectDB();
 
-// IMPORTANT: Razorpay routes MUST come before express.json() middleware
-// because webhook needs raw body, but other routes need parsed JSON
+// IMPORTANT: Razorpay routes handle their own body parsing
+// - /initiate-payment uses bodyParser.json()
+// - /webhook uses bodyParser.raw()
 app.use('/api/razorpay', razorpayRoutes);
 
 // Other routes with JSON parsing

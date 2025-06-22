@@ -4,14 +4,17 @@ const router = express.Router();
 const bodyParser = require('body-parser');
 const { initiatePayment, handleWebhook } = require('../controller/razorpayController');
 
-// Regular JSON parsing for payment initiation
-router.post('/initiate-payment', initiatePayment);
+// JSON parsing specifically for payment initiation
+router.post('/initiate-payment', 
+  bodyParser.json(), 
+  initiatePayment
+);
 
-// Raw body parser specifically for webhook - this must come before any other body parsing
+// Raw body parser specifically for webhook
 router.post('/webhook', 
   bodyParser.raw({ 
     type: 'application/json',
-    limit: '1mb' // Set a reasonable limit
+    limit: '1mb'
   }), 
   handleWebhook
 );
