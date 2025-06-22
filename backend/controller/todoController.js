@@ -42,11 +42,8 @@ const createTodo = async (req, res) => {
       html: `<p>A new task <strong>${newTodo.task}</strong> has been created!</p>` // Use newTodo.task
     });
     // Return success response
-    res.status(201).json({
-      success: true,
-      message: "Todo created successfully",
-      data: savedTodo
-    });
+    res.status(201).json(savedTodo);
+
 
   } catch (error) {
     // Handle errors
@@ -236,15 +233,15 @@ const updateTodo = async (req, res) => {
       return res.status(404).json({ error: 'Todo not found' });
     }
 
-    res.json(updatedTodo);
     await Notification.create({
       user: updatedTodo.user,
       todoId: updatedTodo._id,
-      message: `Todo Updated: "${updatedTodo.task}"`, // Use updatedTodo.task
+      message: `Todo Updated: "${updatedTodo.task}"`,
       type: 'todo_updated',
       read: false
     });
-    io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is update` }); // Use updatedTodo.user and updatedTodo.task
+    io.emit('newNotification', { userId: updatedTodo.user, message: `Your todo "${updatedTodo.task}" is update` });
+    res.json(updatedTodo);
 
   } catch (error) {
     console.error('Error updating todo:', error);

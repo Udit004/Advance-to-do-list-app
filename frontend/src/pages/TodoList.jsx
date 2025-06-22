@@ -54,6 +54,7 @@ const TodoList = () => {
       console.error("User not authenticated");
       return;
     }
+    console.log("TodoList: currentUser.uid before API call:", currentUser?.uid);
 
     try {
       if (originalTodo) {
@@ -66,12 +67,9 @@ const TodoList = () => {
         );
         setEditingTodo(null);
       } else {
-        // This is a create - we need to make the API call
-        const response = await API.post('/todos/create', {
-          ...taskData,
-          userId: currentUser.uid,
-        });
-        setTasks(prevTasks => [...prevTasks, response.data]);
+        // This is a create - the TodoForm already handled the API call
+        // Just update the local state with the returned data
+        setTasks(prevTasks => [...prevTasks, taskData]);
       }
     } catch (error) {
       console.error("Error creating todo:", error);

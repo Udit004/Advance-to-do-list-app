@@ -118,7 +118,7 @@ const TodoForm = ({
 
       const taskPayload = {
         ...formData,
-        userId: currentUser?.uid, // Changed from 'user' to 'userId' for consistency
+        user: currentUser?.uid, // Changed from 'user' to 'userId' for consistency
         priority: taskPriority.toLowerCase(),
         isCompleted: editingTodo ? editingTodo.isCompleted : false
       };
@@ -132,12 +132,14 @@ const TodoForm = ({
         onSubmit(response.data, editingTodo);
 
       } else {
-        // Create new todo - let parent handle this
-        onSubmit(taskPayload, null);
-      }
-      
-      // Reset form only after successful submission for new todos
-      if (!editingTodo) {
+        // Create new todo
+        const response = await API.post('/todos/create/', {
+          ...taskPayload,
+          user: currentUser.uid,
+        });
+        console.log('Todo created:', response.data);
+        onSubmit(response.data, null);
+        // Reset form after successful submission for new todos
         setFormData({
           task: "",
           description: "",
