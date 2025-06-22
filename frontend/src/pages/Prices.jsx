@@ -100,7 +100,7 @@ const Prices = () => {
         description: 'Pro Plan Subscription',
         order_id: order.id,
         handler: async () => {
-          navigate('/payment-success');
+          navigate('/TodoDashboard');
         },
         prefill: {
           name: currentUser.displayName || '',
