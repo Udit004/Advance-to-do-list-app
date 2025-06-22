@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { List, FolderOpen, Menu, X, Sparkles, Lock, Crown, ArrowRight } from "lucide-react";
+import { useAuth } from "../context/AuthContext"; // Import useAuth hook
 import API from "../api/config";
 
 // Import your separate components here when using in your project
@@ -265,45 +266,81 @@ const Sidebar = ({ isExpanded, setIsExpanded, activeItem, setActiveItem, userPro
   );
 };
 
-// Main TodoDashboard Component
-const TodoDashboard = ({ user, profileData }) => {
+// Main TodoDashboard Component - FIXED VERSION
+const TodoDashboard = () => { // Removed props, using useAuth hook instead
+  const { currentUser: user } = useAuth(); // Get user from AuthContext like Profile.jsx
   const [isExpanded, setIsExpanded] = useState(true);
   const [activeItem, setActiveItem] = useState("todoList");
-  const [userProfile, setUserProfile] = useState(null);
+  const [userProfile, setUserProfile] = useState({
+    isPaid: false,
+    username: '',
+    email: '',
+    age: '',
+    profession: '',
+    photoURL: '',
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchUserProfile = async () => {
-      try {
-        setIsLoading(true);
-        
-        const userId = profileData?._id || user?.uid;
-        
-        if (!userId) {
-          console.log('No user ID found, setting default profile');
-          setUserProfile({ isPaid: false });
+      if (user && user.uid) {
+        try {
+          setIsLoading(true);
+          console.log('Fetching profile for user:', user.uid);
+          
+          const response = await API.get(`/user/profile/${user.uid}`);
+          console.log('Profile fetch successful:', response.data);
+          
+          setUserProfile({
+            ...response.data,
+            email: response.data.email || user?.email || '',
+            photoURL: response.data.profileImage || '',
+            isPaid: response.data.isPaid || false,
+          });
           setError(null);
+          
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+          
+          if (error.response && error.response.status === 404) {
+            // Profile not found, set default values with user data
+            setUserProfile(prevData => ({
+              ...prevData,
+              email: user?.email || '',
+              username: user?.displayName || '',
+              isPaid: false,
+            }));
+            setError('Profile not found. You can create your profile in the Profile section.');
+          } else {
+            setError('Failed to fetch profile.');
+            setUserProfile(prevData => ({
+              ...prevData,
+              email: user?.email || '',
+              username: user?.displayName || '',
+              isPaid: false,
+            }));
+          }
+        } finally {
           setIsLoading(false);
-          return;
         }
-        
-        console.log('Fetching profile for user:', userId);
-        const response = await API.get(`/user/profile/${userId}`);
-        setUserProfile(response.data);
-        setError(null);
-        
-      } catch (err) {
-        console.error('Error fetching user profile:', err);
-        setError('Failed to load user profile');
-        setUserProfile({ isPaid: false });
-      } finally {
+      } else {
+        // No user logged in
+        setUserProfile({
+          isPaid: false,
+          username: '',
+          email: '',
+          age: '',
+          profession: '',
+          photoURL: '',
+        });
+        setError('Please log in to access your dashboard.');
         setIsLoading(false);
       }
     };
 
     fetchUserProfile();
-  }, [user, profileData]);
+  }, [user]);
 
   const renderMainContent = () => {
     if (isLoading) {
@@ -312,22 +349,67 @@ const TodoDashboard = ({ user, profileData }) => {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Loading your dashboard...</p>
+            {user?.uid && (
+              <p className="text-gray-400 text-sm mt-2">
+                Fetching profile for: {user.displayName || user.email}
+              </p>
+            )}
           </div>
         </div>
       );
     }
 
-    if (error) {
+    if (!user) {
       return (
         <div className="flex items-center justify-center min-h-full">
-          <div className="text-center">
-            <p className="text-red-600 mb-4">{error}</p>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Retry
-            </button>
+          <div className="text-center max-w-lg">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-4">
+              <h3 className="text-yellow-800 font-semibold mb-2">Authentication Required</h3>
+              <p className="text-yellow-600 mb-4">
+                You need to be logged in to access your dashboard.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <button 
+                onClick={() => window.location.href = '/login'} 
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors mr-2"
+              >
+                Go to Login
+              </button>
+              <button 
+                onClick={() => window.location.href = '/register'} 
+                className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Sign Up
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (error && error.includes('Failed to fetch')) {
+      return (
+        <div className="flex items-center justify-center min-h-full">
+          <div className="text-center max-w-lg">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-4">
+              <h3 className="text-red-800 font-semibold mb-2">Connection Error</h3>
+              <p className="text-red-600 mb-4">{error}</p>
+            </div>
+            <div className="space-y-2">
+              <button 
+                onClick={() => window.location.reload()} 
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors mr-2"
+              >
+                Retry
+              </button>
+              <button 
+                onClick={() => setError(null)} 
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Continue Anyway
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -359,10 +441,28 @@ const TodoDashboard = ({ user, profileData }) => {
       default:
         return (
           <div className="p-8">
-            <h1 className="text-2xl font-bold text-gray-800">Welcome</h1>
+            <h1 className="text-2xl font-bold text-gray-800">
+              Welcome{userProfile?.username ? `, ${userProfile.username}` : ''}!
+            </h1>
             <p className="text-gray-600 mt-2">
-              Select a menu item from the sidebar
+              Select a menu item from the sidebar to get started.
             </p>
+            {error && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-yellow-700 text-sm">{error}</p>
+              </div>
+            )}
+            {/* Debug info - you can remove this in production */}
+            {window.location.hostname === 'localhost' && (
+              <div className="mt-4 p-4 bg-gray-100 rounded-lg text-sm">
+                <strong>Debug Info:</strong><br/>
+                User: {user ? 'Logged in ✅' : 'Not logged in ❌'}<br/>
+                User UID: {user?.uid || 'N/A'}<br/>
+                User Email: {user?.email || 'N/A'}<br/>
+                Is Premium: {userProfile?.isPaid ? 'Yes' : 'No'}<br/>
+                Profile Username: {userProfile?.username || 'Not set'}
+              </div>
+            )}
           </div>
         );
     }
