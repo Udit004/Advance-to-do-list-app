@@ -54,13 +54,20 @@ const Prices = () => {
 
       const amountInPaise = parseFloat(price) * 100;
 
-      // Use the production API URL directly
+      // Use the correct API endpoint structure based on your backend
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://advance-to-do-list-app.vercel.app';
+      
+      console.log('Initiating payment with:', {
+        amount: amountInPaise,
+        userId: currentUser.uid,
+        plan: 'Pro'
+      });
       
       const response = await fetch(`${API_BASE_URL}/api/razorpay/initiate-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({
           amount: amountInPaise,
@@ -68,6 +75,15 @@ const Prices = () => {
           plan: 'Pro'
         })
       });
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
