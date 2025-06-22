@@ -1,7 +1,6 @@
 import React from 'react';
 import { Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { initiatePayment } from '../api/razorpayApi';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -55,12 +54,26 @@ const Prices = () => {
 
       const amountInPaise = parseFloat(price) * 100;
 
-      const { data } = await initiatePayment({
-        amount: amountInPaise,
-        userId: currentUser.uid,
-        plan: 'Pro'
+      // Use the production API URL directly
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://advance-to-do-list-app.vercel.app';
+      
+      const response = await fetch(`${API_BASE_URL}/api/razorpay/initiate-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amountInPaise,
+          userId: currentUser.uid,
+          plan: 'Pro'
+        })
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
       const { order } = data;
 
       const options = {
