@@ -13,7 +13,17 @@ const authMiddleware = async (req, res, next) => {
 
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     console.log('Decoded Token:', decodedToken); // Log the decoded token
-    req.user = decodedToken;
+    
+    // Set req.user with the expected structure
+    req.user = {
+      _id: decodedToken.uid,           // Map Firebase uid to _id
+      uid: decodedToken.uid,           // Keep original uid
+      email: decodedToken.email,       // Include email
+      name: decodedToken.name,         // Include name if available
+      ...decodedToken                  // Include all other Firebase token properties
+    };
+    
+    console.log('Set req.user:', req.user); // Log the user object we're setting
     next();
   } catch (error) {
     console.error('Error verifying Firebase ID token:', error.message); // Log only the error message

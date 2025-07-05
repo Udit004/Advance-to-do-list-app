@@ -5,8 +5,9 @@ import API from "../api/config";
 
 // Import your separate components here when using in your project
 import TodoList from "./TodoList";
-import ProjectTodo from "./ProjectTodo";
+import ProjectList from "./ProjecDashboard";
 import AICreator from "./AICreator";
+import ProjectDashboard from "./ProjecDashboard";
 
 // Premium Preview Overlay Component
 const PremiumPreviewOverlay = ({ featureName, onUpgrade }) => {
@@ -108,7 +109,7 @@ const Sidebar = ({ isExpanded, setIsExpanded, activeItem, setActiveItem, userPro
       isPremium: false,
     },
     {
-      id: "projectTodo",
+      id: "projectDashboard",
       label: "Project Todo",
       icon: FolderOpen,
       isPremium: true,
@@ -418,14 +419,14 @@ const TodoDashboard = () => { // Removed props, using useAuth hook instead
     switch (activeItem) {
       case "todoList":
         return <TodoList />;
-      case "projectTodo":
+      case "projectDashboard":
         return (
           <ProtectedFeature 
             isPaid={userProfile?.isPaid} 
             isLoading={isLoading}
-            featureName="Project Todo"
+            featureName="ProjectDashboard"
           >
-            <ProjectTodo />
+            <ProjectDashboard />
           </ProtectedFeature>
         );
       case "aiCreator":
