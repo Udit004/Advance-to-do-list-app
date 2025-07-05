@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import NotificationBell from "./NotificationBell";
 import { Button } from "./ui/button";
 import { useAuth } from "../context/AuthContext";
+import useInstallPrompt from "../hooks/useInstallPrompt";
 
 const Navbar = () => {
   const { currentUser, logout } = useAuth();
@@ -11,6 +12,25 @@ const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
+
+  const installPromptEvent = useInstallPrompt();
+  const [isInstalled, setIsInstalled] = useState(
+    localStorage.getItem("pwaInstalled") === "true"
+  );
+
+  const handleInstallApp = () => {
+    if (installPromptEvent) {
+      installPromptEvent.prompt();
+      installPromptEvent.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          console.log("PWA Installed");
+          localStorage.setItem("pwaInstalled", "true");
+          setIsInstalled(true);
+          alert("🎉 Thanks for installing ZenList App!");
+        }
+      });
+    }
+  };
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -130,6 +150,14 @@ const Navbar = () => {
             {currentUser && (
               <div className="relative">
                 <NotificationBell userId={currentUser.uid} />
+                {!isInstalled && installPromptEvent && (
+                  <button
+                    onClick={handleInstallApp}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all duration-300 hover:scale-105"
+                  >
+                    📲 Install App
+                  </button>
+                )}
               </div>
             )}
 

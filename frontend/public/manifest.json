@@ -15,12 +15,20 @@
       "src": "/zenList-512.png",
       "sizes": "512x512",
       "type": "image/png"
-    },
-    {
-      "src": "/zenList-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
     }
-  ]
+  ],
+  "screenshots": [
+  {
+    "src": "/screenshot-1920x971.png",
+    "sizes": "1920x971",
+    "type": "image/png",
+    "form_factor": "wide"
+  },
+  {
+    "src": "/screenshot-390x844.png",
+    "sizes": "390x844",
+    "type": "image/png"
+  }
+]
+
 }
