@@ -1,6 +1,6 @@
 {
   "name": "Advance To-Do List App",
-  "short_name": "Todo App",
+  "short_name": "zenList",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

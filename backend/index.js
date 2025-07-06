@@ -42,12 +42,15 @@ connectDB();
 // - /webhook uses bodyParser.raw()
 app.use('/api/razorpay', razorpayRoutes);
 
+
 // Other routes with JSON parsing
 app.use(express.json());
+const pushRoutes = require('./routes/pushRoutes');
 
 const todoRoutes = require('./routes/todolist');
 const notificationRoutes = require('./routes/notificationRoutes');
 
+app.use('/api', pushRoutes);
 app.use('/api/user', userProfileRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/notifications', notificationRoutes);

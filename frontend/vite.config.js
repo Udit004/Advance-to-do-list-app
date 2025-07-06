@@ -17,7 +17,7 @@ export default defineConfig({
       includeAssets: ["favicon.ico", "robots.txt", "apple-touch-icon.png"],
       manifest: {
         name: "Advance To-Do List",
-        short_name: "To-Do",
+        short_name: "ZenList",
         description: "A powerful, installable task manager web app",
         theme_color: "#0f172a",
         background_color: "#ffffff",
