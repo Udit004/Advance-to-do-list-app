@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { subscribeUserToPush, askNotificationPermission } from './utils/pushNotifications';
 import { Helmet } from "react-helmet";
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Home from './pages/Home';
@@ -17,6 +18,26 @@ import ProjectDashboard from './pages/ProjecDashboard';
 
 
 const App = () => {
+  useEffect(() => {
+    async function setupPush() {
+      try {
+        const granted = await askNotificationPermission();
+        if (granted) {
+          const subscribed = await subscribeUserToPush();
+          console.log(subscribed ? '✅ Push subscription successful' : '❌ Failed to subscribe');
+        } else {
+          console.log('🔕 Notification permission not granted');
+        }
+      } catch (error) {
+        console.error('Push setup error:', error);
+      }
+    }
+
+    setupPush();
+  }, []);
+
+
+
   return (
     <Router>
       <Helmet>
