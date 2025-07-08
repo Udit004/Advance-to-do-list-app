@@ -14,7 +14,7 @@ import ScrollToTop from './components/ScrollToTop';
 import Profile from './pages/Profile';
 import TodoDashboard from './pages/TodoDashboard';
 import PaymentSuccess from './pages/PaymentSuccess';
-import ProjectDashboard from './pages/ProjecDashboard';
+import ProjectTodos from './pages/components/ProjectTodos';
 
 
 const App = () => {
@@ -58,9 +58,8 @@ const App = () => {
               <Route path="/signup" element={<Signup />} />
               <Route path="/Profile" element={<Profile/>}/>
               <Route path="/prices" element={<Prices />} />
-              {/* <Route path="/projects" element={<ProjectDashboard />} /> */}
-              {/* <Route path="/project/:projectId/todos" element={<ProjectTodo />} /> */}
               <Route path="/TodoDashboard" element={<TodoDashboard/>}/>
+              <Route path="/project/:projectId/todos" element={<ProjectTodos />} />
               <Route path="/payment-success" element={<PaymentSuccess />} />
             </Routes>
           </main>

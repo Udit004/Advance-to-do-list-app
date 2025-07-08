@@ -5,7 +5,6 @@ import API from "../api/config";
 
 // Import your separate components here when using in your project
 import TodoList from "./TodoList";
-import ProjectList from "./ProjecDashboard";
 import AICreator from "./AICreator";
 import ProjectDashboard from "./ProjecDashboard";
 
