@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const Project = require('../models/projectModel'); // Add missing import
 const {
   createProject,
   getProjectsByUser,
@@ -13,19 +14,21 @@ const {
   deleteProject
 } = require('../controller/projectController');
 
-// Middleware to authenticate user (assuming you have this)
 const authenticateUser = require('../middleware/authMiddleware');
 
-// Apply authentication to all routes
-router.use(authenticateUser);
+// Apply authentication to all routes except public ones
+router.use((req, res, next) => {
+  // Skip auth for public routes
+  if (req.path.includes('/public')) {
+    return next();
+  }
+  return authenticateUser(req, res, next);
+});
 
 // Project CRUD routes
 router.post('/create', createProject);
-
-// Fix: Use separate routes instead of optional parameter
-router.get('/user', getProjectsByUser); // Get projects for current user
-router.get('/user/:uid', getProjectsByUser); // Get projects for specific user
-
+router.get('/user', getProjectsByUser);
+router.get('/user/:uid', getProjectsByUser);
 router.get('/:id', getProjectById);
 router.put('/:id', updateProject);
 router.delete('/:id', deleteProject);
@@ -39,19 +42,26 @@ router.post('/:projectId/share', shareProject);
 router.post('/:projectId/respond', respondToInvitation);
 router.get('/invitations/pending', getPendingInvitations);
 
-// Additional useful routes
+// Optimized collaborator routes
 router.get('/:projectId/collaborators', async (req, res) => {
   try {
     const { projectId } = req.params;
-    // Use both _id and uid for compatibility
     const userId = req.user._id || req.user.uid;
     
-    const project = await Project.findById(projectId);
+    // Use lean() for better performance
+    const project = await Project.findById(projectId)
+      .select('owner collaborators')
+      .lean();
+      
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     
-    if (!project.hasAccess(userId)) {
+    // Check access efficiently
+    const isOwner = project.owner.toString() === userId;
+    const hasAccess = isOwner || project.collaborators.some(c => c.userId === userId && c.status === 'accepted');
+    
+    if (!hasAccess) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
@@ -63,93 +73,89 @@ router.get('/:projectId/collaborators', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Error fetching collaborators:', error);
     res.status(500).json({ success: false, message: 'Error fetching collaborators', error: error.message });
   }
 });
 
+// Optimized role update
 router.patch('/:projectId/collaborators/:collaboratorId/role', async (req, res) => {
   try {
     const { projectId, collaboratorId } = req.params;
     const { role } = req.body;
-    // Use both _id and uid for compatibility
     const userId = req.user._id || req.user.uid;
     
     if (!['editor', 'viewer'].includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role' });
     }
     
-    const project = await Project.findById(projectId);
+    // Use findOneAndUpdate for better performance
+    const project = await Project.findOneAndUpdate(
+      { 
+        _id: projectId, 
+        owner: userId,
+        'collaborators.userId': collaboratorId 
+      },
+      { 
+        $set: { 'collaborators.$.role': role } 
+      },
+      { new: true }
+    );
+    
     if (!project) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
     }
-    
-    if (project.owner !== userId) {
-      return res.status(403).json({ success: false, message: 'Only owner can change roles' });
-    }
-    
-    const collaborator = project.collaborators.find(collab => collab.userId === collaboratorId);
-    if (!collaborator) {
-      return res.status(404).json({ success: false, message: 'Collaborator not found' });
-    }
-    
-    collaborator.role = role;
-    await project.save();
     
     res.status(200).json({ success: true, message: 'Role updated successfully' });
   } catch (error) {
+    console.error('Error updating role:', error);
     res.status(500).json({ success: false, message: 'Error updating role', error: error.message });
   }
 });
 
-// Add this route to your projectRoutes.js file
-
-// Remove collaborator route (add this to your existing routes)
+// Optimized collaborator removal
 router.delete('/:projectId/collaborators/:collaboratorId', async (req, res) => {
   try {
     const { projectId, collaboratorId } = req.params;
     const userId = req.user._id || req.user.uid;
     
-    const Project = require('../models/projectModel'); // Import if not already imported
+    // Use findOneAndUpdate with $pull for better performance
+    const project = await Project.findOneAndUpdate(
+      { 
+        _id: projectId, 
+        owner: userId 
+      },
+      { 
+        $pull: { collaborators: { userId: collaboratorId } } 
+      },
+      { new: true }
+    );
     
-    const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
+      return res.status(404).json({ success: false, message: 'Project not found or access denied' });
     }
-    
-    // Only owner can remove collaborators
-    if (project.owner !== userId) {
-      return res.status(403).json({ success: false, message: 'Only owner can remove collaborators' });
-    }
-    
-    // Remove collaborator from the array
-    project.collaborators = project.collaborators.filter(collab => collab.userId !== collaboratorId);
-    await project.save();
     
     res.status(200).json({ success: true, message: 'Collaborator removed successfully' });
   } catch (error) {
+    console.error('Error removing collaborator:', error);
     res.status(500).json({ success: false, message: 'Error removing collaborator', error: error.message });
   }
 });
 
-
-
-
-
-
-// Get public project info (no auth required for public projects)
+// Public project info (no auth required)
 router.get('/:projectId/public', async (req, res) => {
   try {
     const { projectId } = req.params;
     
     const project = await Project.findById(projectId)
       .select('name description isPublic owner')
-      .populate('owner', 'name email username');
+      .populate('owner', 'name email username')
+      .lean();
     
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     
-    // Only return basic info, even for public projects
     res.status(200).json({
       success: true,
       data: {
@@ -161,81 +167,95 @@ router.get('/:projectId/public', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Error fetching public project:', error);
     res.status(500).json({ success: false, message: 'Error fetching project', error: error.message });
   }
 });
 
-// Request access to private project
-router.post('/:projectId/request-access', authenticateUser, async (req, res) => {
+// Apply auth middleware to remaining routes
+router.use(authenticateUser);
+
+router.post('/:projectId/request-access', async (req, res) => {
   try {
     const { projectId } = req.params;
     const userId = req.user._id || req.user.uid;
     
-    const project = await Project.findById(projectId);
+    const project = await Project.findById(projectId).lean();
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     
-    // Check if user already has access or pending request
-    const existingCollaborator = project.collaborators.find(collab => collab.userId === userId);
-    if (existingCollaborator) {
+    // Check if user already has access
+    const hasAccess = project.owner.toString() === userId || 
+                     project.collaborators.some(c => c.userId === userId);
+    
+    if (hasAccess) {
       return res.status(400).json({ 
         success: false, 
         message: 'You already have access or a pending request' 
       });
     }
     
-    // Add as pending collaborator
-    await project.addCollaborator({
-      userId: userId,
-      email: req.user.email,
-      username: req.user.username || req.user.displayName,
-      role: 'viewer',
-      status: 'pending'
+    // Add collaborator using atomic operation
+    await Project.findByIdAndUpdate(projectId, {
+      $addToSet: {
+        collaborators: {
+          userId: userId,
+          email: req.user.email,
+          username: req.user.username || req.user.displayName,
+          role: 'viewer',
+          status: 'pending'
+        }
+      }
     });
     
     res.status(200).json({ success: true, message: 'Access request sent successfully' });
   } catch (error) {
+    console.error('Error requesting access:', error);
     res.status(500).json({ success: false, message: 'Error requesting access', error: error.message });
   }
 });
 
-// Auto-accept for public projects or direct link sharing
-router.post('/:projectId/join', authenticateUser, async (req, res) => {
+router.post('/:projectId/join', async (req, res) => {
   try {
     const { projectId } = req.params;
     const userId = req.user._id || req.user.uid;
     
-    const project = await Project.findById(projectId);
+    const project = await Project.findById(projectId).lean();
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     
-    // Only allow joining public projects
     if (!project.isPublic) {
       return res.status(403).json({ success: false, message: 'Project is private' });
     }
     
     // Check if user already has access
-    if (project.hasAccess(userId)) {
+    const hasAccess = project.owner.toString() === userId || 
+                     project.collaborators.some(c => c.userId === userId);
+    
+    if (hasAccess) {
       return res.status(400).json({ success: false, message: 'You already have access' });
     }
     
-    // Add as viewer to public project
-    await project.addCollaborator({
-      userId: userId,
-      email: req.user.email,
-      username: req.user.username || req.user.displayName,
-      role: 'viewer',
-      status: 'accepted'
+    // Add collaborator using atomic operation
+    await Project.findByIdAndUpdate(projectId, {
+      $addToSet: {
+        collaborators: {
+          userId: userId,
+          email: req.user.email,
+          username: req.user.username || req.user.displayName,
+          role: 'viewer',
+          status: 'accepted'
+        }
+      }
     });
     
     res.status(200).json({ success: true, message: 'Successfully joined project' });
   } catch (error) {
+    console.error('Error joining project:', error);
     res.status(500).json({ success: false, message: 'Error joining project', error: error.message });
   }
 });
-
-
 
 module.exports = router;
