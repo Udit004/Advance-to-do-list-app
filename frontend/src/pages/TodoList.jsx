@@ -33,7 +33,7 @@ const TodoList = () => {
     
     try {
       setLoading(true);
-      const response = await API.get(`/todos/${currentUser.uid}`);
+      const response = await API.get(`/todos/${currentUser.uid}?excludeProjectTodos=true`);
       setTasks(response.data);
     } catch (error) {
       console.error("Error fetching tasks:", error);

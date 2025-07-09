@@ -51,7 +51,13 @@ const todoSchema = new mongoose.Schema({
     type: String,
     enum: ['general', 'groceries', 'work', 'house','education'],
     // default: 'general'
-  }
+  },
+  project: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'Project',
+  default: null // this means it's a standalone todo
+}
+
 }, {
   timestamps: true, // Auto-manage createdAt and updatedAt
   toJSON: { virtuals: true },
