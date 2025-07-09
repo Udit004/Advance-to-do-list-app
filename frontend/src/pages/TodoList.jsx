@@ -3,13 +3,13 @@ import API from "../api/config";
 import AuthContext from "../context/AuthContext";
 
 // Import modular components
-import LoadingSpinner from "./todo/LoadingSpinner";
-import EmptyState from "./todo/EmptyState";
-import SearchInput from "./todo/SearchInput";
-import ProgressBar from "./todo/ProgressBar";
-import TodoFilters from "./todo/TodoFilters";
-import TodoForm from "./todo/TodoForm";
-import TodoItem from "./todo/TodoItem";
+import LoadingSpinner from "./todoComponents/LoadingSpinner";
+import EmptyState from "./todoComponents/EmptyState";
+import SearchInput from "./todoComponents/SearchInput";
+import ProgressBar from "./todoComponents/ProgressBar";
+import TodoFilters from "./todoComponents/TodoFilters";
+import TodoForm from "./todoComponents/TodoForm";
+import TodoItem from "./todoComponents/TodoItem";
 
 // Main TodoList Component
 const TodoList = () => {
@@ -33,7 +33,7 @@ const TodoList = () => {
     
     try {
       setLoading(true);
-      const response = await API.get(`/todos/${currentUser.uid}`);
+      const response = await API.get(`/todos/${currentUser.uid}?excludeProjectTodos=true`);
       setTasks(response.data);
     } catch (error) {
       console.error("Error fetching tasks:", error);

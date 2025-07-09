@@ -1,6 +1,6 @@
-const Project = require('../models/projectModel');
-const Todo = require('../models/todo'); // Your existing Todo model
-const User = require('../models/userProfileModel'); // Assuming you have a User model
+const Project = require("../models/projectModel");
+const Todo = require("../models/todo"); // Your existing Todo model
+const User = require("../models/userProfileModel"); // Assuming you have a User model
 
 // Create a new project
 const createProject = async (req, res) => {
@@ -11,14 +11,14 @@ const createProject = async (req, res) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: 'User authentication failed. Owner ID is missing.'
+        message: "User authentication failed. Owner ID is missing.",
       });
     }
 
     if (!name) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Project name is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Project name is required",
       });
     }
 
@@ -27,22 +27,22 @@ const createProject = async (req, res) => {
       description,
       owner: userId,
       isPublic: isPublic || false,
-      color: color || 'blue',
-      tags: tags || []
+      color: color || "blue",
+      tags: tags || [],
     });
 
     const savedProject = await newProject.save();
-    
-    res.status(201).json({ 
-      success: true, 
-      message: 'Project created successfully', 
-      data: savedProject 
+
+    res.status(201).json({
+      success: true,
+      message: "Project created successfully",
+      data: savedProject,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error creating project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error creating project",
+      error: error.message,
     });
   }
 };
@@ -53,12 +53,12 @@ const getProjectsByUser = async (req, res) => {
   try {
     // Handle both cases: /user and /user/:uid
     const userId = req.params.uid || req.user._id;
-    const { includePublic = false, status = 'all' } = req.query;
+    const { includePublic = false, status = "all" } = req.query;
 
     if (!userId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'User ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
       });
     }
 
@@ -66,11 +66,12 @@ const getProjectsByUser = async (req, res) => {
     const conditions = {
       $or: [
         { owner: userId },
-        { 
-          'collaborators.userId': userId,
-          'collaborators.status': status === 'all' ? { $in: ['pending', 'accepted'] } : status
-        }
-      ]
+        {
+          "collaborators.userId": userId,
+          "collaborators.status":
+            status === "all" ? { $in: ["pending", "accepted"] } : status,
+        },
+      ],
     };
 
     // Include public projects if requested
@@ -79,11 +80,11 @@ const getProjectsByUser = async (req, res) => {
     }
 
     const projects = await Project.find(conditions)
-      .populate('todos', 'task isCompleted priority dueDate')
+      .populate("todos", "task isCompleted priority dueDate")
       .sort({ updatedAt: -1 });
 
     // Add user's role to each project
-    const projectsWithRole = projects.map(project => {
+    const projectsWithRole = projects.map((project) => {
       const projectObj = project.toObject();
       projectObj.userRole = project.getUserRole(userId);
       return projectObj;
@@ -91,13 +92,13 @@ const getProjectsByUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: projectsWithRole
+      data: projectsWithRole,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching projects', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error fetching projects",
+      error: error.message,
     });
   }
 };
@@ -108,27 +109,29 @@ const getProjectById = async (req, res) => {
     const userId = req.user._id;
 
     if (!projectId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Project ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Project ID is required",
       });
     }
 
-    const project = await Project.findById(projectId)
-      .populate('todos', 'task description isCompleted priority dueDate createdAt updatedAt');
+    const project = await Project.findById(projectId).populate(
+      "todos",
+      "task description isCompleted priority dueDate createdAt updatedAt"
+    );
 
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
     // Check access permissions
     if (!project.hasAccess(userId)) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access denied to this project' 
+      return res.status(403).json({
+        success: false,
+        message: "Access denied to this project",
       });
     }
 
@@ -137,16 +140,17 @@ const getProjectById = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: projectData
+      data: projectData,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error fetching project",
+      error: error.message,
     });
   }
 };
+
 
 // Add existing todo to project
 const addTodoToProject = async (req, res) => {
@@ -157,52 +161,50 @@ const addTodoToProject = async (req, res) => {
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Project not found" });
     }
 
-    // Check if user has edit permissions
     const userRole = project.getUserRole(userId);
-    if (!userRole || (userRole === 'viewer')) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Insufficient permissions to add todos' 
-      });
+    if (!userRole || userRole === "viewer") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Insufficient permissions" });
     }
 
-    // Verify todo exists and belongs to user
     const todo = await Todo.findById(todoId);
     if (!todo || todo.user !== userId) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Todo not found or access denied' 
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Todo not found or access denied" });
     }
 
-    // Check if todo is already in project
     if (project.todos.includes(todoId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Todo is already in this project' 
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Todo already in this project" });
     }
 
+    // ✅ Assign project to todo
+    todo.project = projectId;
+    await todo.save();
+
+    // Add to project
     project.todos.push(todoId);
     await project.save();
     await project.updateStats();
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'Todo added to project successfully',
-      data: project
+    res.status(200).json({
+      success: true,
+      message: "Todo added to project successfully",
+      data: project,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error adding todo to project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error adding todo to project",
+      error: error.message,
     });
   }
 };
@@ -215,33 +217,38 @@ const removeTodoFromProject = async (req, res) => {
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
     const userRole = project.getUserRole(userId);
-    if (!userRole || userRole === 'viewer') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Insufficient permissions' 
+    if (!userRole || userRole === "viewer") {
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions",
       });
     }
 
-    project.todos = project.todos.filter(id => id.toString() !== todoId);
+    project.todos = project.todos.filter((id) => id.toString() !== todoId);
     await project.save();
     await project.updateStats();
+    const todo = await Todo.findById(todoId);
+    if (todo) {
+      todo.project = null;
+      await todo.save();
+    }
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'Todo removed from project successfully' 
+    res.status(200).json({
+      success: true,
+      message: "Todo removed from project successfully",
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error removing todo from project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error removing todo from project",
+      error: error.message,
     });
   }
 };
@@ -250,38 +257,38 @@ const removeTodoFromProject = async (req, res) => {
 const shareProject = async (req, res) => {
   try {
     const { projectId } = req.params;
-    const { email, role = 'editor' } = req.body;
+    const { email, role = "editor" } = req.body;
     const userId = req.user._id;
 
     if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
       });
     }
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
     // Only owner can share projects
     if (project.owner !== userId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only project owner can share projects' 
+      return res.status(403).json({
+        success: false,
+        message: "Only project owner can share projects",
       });
     }
 
     // Find user by email (assuming you have a User model)
     const targetUser = await User.findOne({ email });
     if (!targetUser) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found with this email' 
+      return res.status(404).json({
+        success: false,
+        message: "User not found with this email",
       });
     }
 
@@ -290,34 +297,34 @@ const shareProject = async (req, res) => {
         userId: targetUser._id || targetUser.uid,
         email: targetUser.email,
         username: targetUser.username || targetUser.displayName,
-        role
+        role,
       });
 
-      res.status(200).json({ 
-        success: true, 
-        message: 'Project shared successfully',
+      res.status(200).json({
+        success: true,
+        message: "Project shared successfully",
         data: {
           collaborator: {
             email: targetUser.email,
             username: targetUser.username || targetUser.displayName,
-            role
-          }
-        }
+            role,
+          },
+        },
       });
     } catch (error) {
-      if (error.message === 'User is already a collaborator') {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'User is already a collaborator on this project' 
+      if (error.message === "User is already a collaborator") {
+        return res.status(400).json({
+          success: false,
+          message: "User is already a collaborator on this project",
         });
       }
       throw error;
     }
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error sharing project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error sharing project",
+      error: error.message,
     });
   }
 };
@@ -329,44 +336,44 @@ const respondToInvitation = async (req, res) => {
     const { action } = req.body; // 'accept' or 'decline'
     const userId = req.user._id;
 
-    if (!['accept', 'decline'].includes(action)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Action must be "accept" or "decline"' 
+    if (!["accept", "decline"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Action must be "accept" or "decline"',
       });
     }
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
-    const collaborator = project.collaborators.find(collab => 
-      collab.userId === userId && collab.status === 'pending'
+    const collaborator = project.collaborators.find(
+      (collab) => collab.userId === userId && collab.status === "pending"
     );
 
     if (!collaborator) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Invitation not found or already responded' 
+      return res.status(404).json({
+        success: false,
+        message: "Invitation not found or already responded",
       });
     }
 
-    collaborator.status = action === 'accept' ? 'accepted' : 'declined';
+    collaborator.status = action === "accept" ? "accepted" : "declined";
     await project.save();
 
-    res.status(200).json({ 
-      success: true, 
-      message: `Invitation ${action}ed successfully` 
+    res.status(200).json({
+      success: true,
+      message: `Invitation ${action}ed successfully`,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error responding to invitation', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error responding to invitation",
+      error: error.message,
     });
   }
 };
@@ -377,19 +384,19 @@ const getPendingInvitations = async (req, res) => {
     const userId = req.user._id;
 
     const projects = await Project.find({
-      'collaborators.userId': userId,
-      'collaborators.status': 'pending'
-    }).select('name description owner createdAt');
+      "collaborators.userId": userId,
+      "collaborators.status": "pending",
+    }).select("name description owner createdAt");
 
     res.status(200).json({
       success: true,
-      data: projects
+      data: projects,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching pending invitations', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error fetching pending invitations",
+      error: error.message,
     });
   }
 };
@@ -402,25 +409,25 @@ const updateProject = async (req, res) => {
     const userId = req.user._id;
 
     if (!projectId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Project ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Project ID is required",
       });
     }
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
     const userRole = project.getUserRole(userId);
-    if (!userRole || userRole === 'viewer') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Insufficient permissions to update project' 
+    if (!userRole || userRole === "viewer") {
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions to update project",
       });
     }
 
@@ -430,16 +437,16 @@ const updateProject = async (req, res) => {
       { new: true, runValidators: true }
     );
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'Project updated successfully', 
-      data: updatedProject 
+    res.status(200).json({
+      success: true,
+      message: "Project updated successfully",
+      data: updatedProject,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error updating project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error updating project",
+      error: error.message,
     });
   }
 };
@@ -451,39 +458,39 @@ const deleteProject = async (req, res) => {
     const userId = req.user._id;
 
     if (!projectId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Project ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: "Project ID is required",
       });
     }
 
     const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Project not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
       });
     }
 
     // Only owner can delete project
     if (project.owner !== userId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Only project owner can delete projects' 
+      return res.status(403).json({
+        success: false,
+        message: "Only project owner can delete projects",
       });
     }
 
     await Project.findByIdAndDelete(projectId);
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'Project deleted successfully' 
+    res.status(200).json({
+      success: true,
+      message: "Project deleted successfully",
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error deleting project', 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Error deleting project",
+      error: error.message,
     });
   }
 };
@@ -498,5 +505,5 @@ module.exports = {
   respondToInvitation,
   getPendingInvitations,
   updateProject,
-  deleteProject
+  deleteProject,
 };

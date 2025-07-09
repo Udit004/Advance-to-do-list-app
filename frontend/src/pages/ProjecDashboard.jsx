@@ -5,14 +5,14 @@ import { AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 // Import child components
-import DashboardHeader from './components/DashboardHeader';
-import StatsCards from './components/StatsCards';
-import PendingInvitations from './components/PendingInvitations';
-import SearchAndFilters from './components/SearchAndFilters';
-import CreateProjectModal from './components/CreateProjectModal';
-import ProjectGrid from './components/ProjectGrid';
-import ProjectList from './components/ProjectList';
-import LoadingSpinner from './components/LoadingSpinner';
+import DashboardHeader from './projectComponents/DashboardHeader';
+import StatsCards from './projectComponents/StatsCards';
+import PendingInvitations from './projectComponents/PendingInvitations';
+import SearchAndFilters from './projectComponents/SearchAndFilters';
+import CreateProjectModal from './projectComponents/CreateProjectModal';
+import ProjectGrid from './projectComponents/ProjectGrid';
+import ProjectList from './projectComponents/ProjectList';
+import LoadingSpinner from './projectComponents/LoadingSpinner';
 
 /**
  * Main ProjectDashboard Component

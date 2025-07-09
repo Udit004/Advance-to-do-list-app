@@ -18,7 +18,7 @@ import ScrollToTop from "./components/ScrollToTop";
 import Profile from "./pages/Profile";
 import TodoDashboard from "./pages/TodoDashboard";
 import PaymentSuccess from "./pages/PaymentSuccess";
-import ProjectTodos from "./pages/components/ProjectTodos";
+import ProjectTodos from "./pages/projectComponents/ProjectTodos";
 
 const App = () => {
   useEffect(() => {

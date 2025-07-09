@@ -25,11 +25,20 @@ const sendPushNotifications = async (userId, payload) => {
 // POST - Create Todo
 const createTodo = async (req, res) => {
   try {
-    const { task, isCompleted, description, dueDate, priority, user, list } = req.body;
+    const { task, isCompleted, description, dueDate, priority, user, list, project } = req.body;
 
     if (!task) return res.status(400).json({ message: "Task is required" });
 
-    const newTodo = new Todo({ task, isCompleted: isCompleted || false, description, dueDate, priority, user, list: list || "general" });
+    const newTodo = new Todo({ 
+      task, 
+      isCompleted: isCompleted || false, 
+      description, 
+      dueDate, 
+      priority, 
+      user, 
+      list: list || "general", 
+      project: project || null
+    });
     const savedTodo = await newTodo.save();
 
     const message = `New todo created: "${savedTodo.task}"`;
@@ -162,8 +171,12 @@ const getTodosByUser = async (req, res) => {
     if (!userId) return res.status(400).json({ message: "User ID required" });
 
     const query = { user: userId };
-    if (projectId) query.project = projectId;
-    else if (excludeProjectTodos) query.project = { $exists: false };
+
+    if (projectId) {
+      query.project = projectId;
+    } else if (excludeProjectTodos) {
+      query.project = { $eq: null }; // ✅ Properly exclude project-based todos
+    }
 
     const todos = await Todo.find(query);
     res.status(200).json(todos);
@@ -171,6 +184,7 @@ const getTodosByUser = async (req, res) => {
     res.status(500).json({ error: "Error fetching todos" });
   }
 };
+
 
 module.exports = {
   createTodo,
