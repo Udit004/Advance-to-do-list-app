@@ -430,7 +430,8 @@ const MobileHeader = ({ userProfile, activeItem }) => {
 
 // Main TodoDashboard Component - Mobile Optimized
 const TodoDashboard = () => {
-  const { currentUser: user } = useAuth();
+  const auth = useAuth() || {};
+  const { currentUser: user } = auth;
   const [isExpanded, setIsExpanded] = useState(false); // Default to closed on mobile
   const [activeItem, setActiveItem] = useState("todoList");
   const [userProfile, setUserProfile] = useState({

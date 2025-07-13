@@ -4,13 +4,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import AIPriorityPredictor from './AIPriorityPredictor';
 import API from '../../api/config';
 
-const TodoForm = ({ 
-  editingTodo, 
-  onSubmit, 
-  onCancel, 
-  currentUser 
-}) => {
-  console.log("TodoForm component rendered.");
+const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
   const [formData, setFormData] = useState({
     task: "",
     description: "",
@@ -22,11 +16,11 @@ const TodoForm = ({
   const [isPredicting, setIsPredicting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Debounce the task and description for AI prediction
+  // Debounce for AI trigger
   const debouncedTask = useDebounce(formData.task, 700);
   const debouncedDescription = useDebounce(formData.description, 700);
+  const debouncedDueDate = useDebounce(formData.dueDate, 700);
 
-  // Update form when editing
   useEffect(() => {
     if (editingTodo) {
       setFormData({
@@ -40,7 +34,6 @@ const TodoForm = ({
       });
       setPredictedPriority(editingTodo.priority || "");
     } else {
-      // Reset form when not editing
       setFormData({
         task: "",
         description: "",
@@ -52,27 +45,30 @@ const TodoForm = ({
     }
   }, [editingTodo]);
 
-  // AI Priority Prediction
-  const predictPriority = async (task, description) => {
+  // ✅ Updated: AI Priority Prediction using task, description, dueDate
+  const predictPriority = async (task, description, dueDate) => {
     try {
       setIsPredicting(true);
 
       const trimmedTask = task.trim();
       const trimmedDescription = description.trim();
 
-      if (!trimmedTask || !trimmedDescription) {
+      if (!trimmedTask || !dueDate) {
         setPredictedPriority("low");
         return "low";
       }
-      
+
       const mlModelUrl = import.meta.env.MODE === 'development' 
         ? "http://127.0.0.1:5000/predict" 
         : import.meta.env.VITE_ML_MODEL_API_URL;
-      
-      const inputText = `${trimmedTask} ${trimmedDescription}`.trim();
-      const response = await API.post(mlModelUrl, { text: inputText });
+
+      const response = await API.post(mlModelUrl, {
+        task: trimmedTask,
+        description: trimmedDescription,
+        due_date: dueDate.slice(0, 10) // format YYYY-MM-DD
+      });
+
       const predicted = response.data.priority;
-      
       setPredictedPriority(predicted);
       return predicted;
     } catch (error) {
@@ -84,62 +80,45 @@ const TodoForm = ({
     }
   };
 
-  // Trigger prediction when task or description changes (only for new todos)
+  // ✅ Updated: Trigger AI prediction with all 3 fields
   useEffect(() => {
-    if (!editingTodo && (debouncedTask || debouncedDescription)) {
-      predictPriority(debouncedTask, debouncedDescription);
+    if (!editingTodo && (debouncedTask || debouncedDescription) && debouncedDueDate) {
+      predictPriority(debouncedTask, debouncedDescription, debouncedDueDate);
     }
-  }, [debouncedTask, debouncedDescription, editingTodo]);
+  }, [debouncedTask, debouncedDescription, debouncedDueDate, editingTodo]);
 
   const handleChange = (e) => {
-    console.log("TodoForm: handleChange called.", e.target.name, e.target.value);
-
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-    console.log("TodoForm: formData after change:", formData);
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
-    console.log("TodoForm: handleSubmit function entered.");
-
     e.preventDefault();
     setIsSubmitting(true);
 
-    
     try {
       let taskPriority = formData.priority;
-      
+
       if (!taskPriority) {
         taskPriority = predictedPriority || "low";
       }
 
       const taskPayload = {
         ...formData,
-        user: currentUser?.uid, // Changed from 'user' to 'userId' for consistency
+        user: currentUser?.uid,
         priority: taskPriority.toLowerCase(),
-        isCompleted: editingTodo ? editingTodo.isCompleted : false
+        isCompleted: editingTodo ? editingTodo.isCompleted : false,
       };
 
       if (editingTodo) {
-        // Update existing todo
         const response = await API.put(`/todos/update/${editingTodo._id}`, taskPayload);
-        console.log('Todo updated:', response.data);
-        
-        // Call onSubmit with updated data and the original editingTodo object
         onSubmit(response.data, editingTodo);
-
       } else {
-        // Create new todo
         const response = await API.post('/todos/create/', {
           ...taskPayload,
           user: currentUser.uid,
         });
-        console.log('Todo created:', response.data);
         onSubmit(response.data, null);
-        // Reset form after successful submission for new todos
         setFormData({
           task: "",
           description: "",
@@ -149,10 +128,9 @@ const TodoForm = ({
         });
         setPredictedPriority("");
       }
-      
+
     } catch (error) {
       console.error("Error submitting form:", error);
-      // You might want to show an error message to the user here
     } finally {
       setIsSubmitting(false);
     }
@@ -198,7 +176,7 @@ const TodoForm = ({
               onChange={handleChange}
               placeholder="What needs to be done?"
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
             />
           </div>
           
@@ -212,7 +190,7 @@ const TodoForm = ({
               value={formData.dueDate}
               onChange={handleChange}
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
             />
           </div>
         </div>
@@ -225,14 +203,13 @@ const TodoForm = ({
             name="description"
             value={formData.description}
             onChange={handleChange}
-            placeholder="Add more details about your task..."
             required
             rows="3"
-            className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200 resize-none"
+            placeholder="Add more details..."
+            className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white resize-none"
           />
         </div>
 
-        {/* Only show AI prediction for new todos */}
         {!editingTodo && (
           <AIPriorityPredictor 
             predictedPriority={predictedPriority} 
@@ -249,7 +226,7 @@ const TodoForm = ({
               name="priority"
               value={formData.priority}
               onChange={handleChange}
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
             >
               {!editingTodo && <option value="">🤖 Use AI Prediction</option>}
               {editingTodo && <option value="">Select Priority</option>}
@@ -268,7 +245,7 @@ const TodoForm = ({
               value={formData.list}
               onChange={handleChange}
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all duration-200"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
             >
               <option value="" disabled>Select category</option>
               <option value="general">📝 General</option>
@@ -283,11 +260,11 @@ const TodoForm = ({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:cursor-not-allowed disabled:transform-none"
+          className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl"
         >
           {isSubmitting ? (
             <div className="flex items-center justify-center gap-2">
-              <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+              <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
               {editingTodo ? "Updating..." : "Creating..."}
             </div>
           ) : (

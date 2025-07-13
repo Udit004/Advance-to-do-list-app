@@ -9,6 +9,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
+  server: {
+    proxy: {
+      '/api': 'http://localhost:5000'
+    }
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -55,10 +60,5 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  },
-  server: {
-    proxy: {
-      "/api": "http://localhost:5000",
-    },
-  },
+  }
 });

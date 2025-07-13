@@ -1,8 +1,7 @@
 const Todo = require('../models/todo');
 const Notification = require('../models/notificationModel');
 const PushSubscription = require('../models/pushSubscriptionModel');
-const { getIo } = require('../socket');
-const io = getIo();
+const { sendNotificationToUser } = require('../socket');
 const transporter = require('../config/email');
 const webpush = require('web-push');
 const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, EMAIL_USER } = process.env;
@@ -12,13 +11,96 @@ webpush.setVapidDetails(`mailto:${EMAIL_USER}`, VAPID_PUBLIC_KEY, VAPID_PRIVATE_
 
 // Utility function: Send push notification
 const sendPushNotifications = async (userId, payload) => {
-  const subscriptions = await PushSubscription.find({ user: userId });
-  for (const sub of subscriptions) {
-    try {
-      await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
-    } catch (error) {
-      console.error('Push Notification Error:', error.message);
+  try {
+    const subscriptions = await PushSubscription.find({ user: userId });
+    
+    if (subscriptions.length === 0) {
+      console.log('No push subscriptions found for user:', userId);
+      return;
     }
+
+    const sendPromises = subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
+        console.log('Push notification sent successfully to:', sub.subscription.endpoint);
+      } catch (error) {
+        console.error('Push notification failed for:', sub.subscription.endpoint, error.message);
+        
+        // Remove invalid subscriptions
+        if (error.statusCode === 404 || error.statusCode === 410) {
+          await PushSubscription.findByIdAndDelete(sub._id);
+          console.log('Removed invalid subscription:', sub._id);
+        }
+      }
+    });
+
+    await Promise.all(sendPromises);
+  } catch (error) {
+    console.error('Error in sendPushNotifications:', error);
+  }
+};
+
+// Utility function: Send email notification
+const sendEmailNotification = async (userEmail, subject, htmlContent) => {
+  try {
+    if (!userEmail || !transporter) {
+      console.log('Email notification skipped - missing email or transporter');
+      return;
+    }
+
+    await transporter.sendMail({
+      from: EMAIL_USER,
+      to: userEmail,
+      subject,
+      html: htmlContent
+    });
+    console.log('Email notification sent successfully');
+  } catch (error) {
+    console.error('Email notification failed:', error);
+  }
+};
+
+// Utility function: Send comprehensive notification
+const sendNotification = async (userId, notificationData, userEmail = null) => {
+  try {
+    // Create notification in database
+    const notification = await Notification.create({
+      user: userId,
+      todoId: notificationData.todoId,
+      message: notificationData.message,
+      type: notificationData.type,
+      read: false
+    });
+
+    // Send real-time notification via Socket.IO
+    sendNotificationToUser(userId, {
+      _id: notification._id,
+      user: userId,
+      todoId: notificationData.todoId,
+      message: notificationData.message,
+      type: notificationData.type,
+      read: false,
+      createdAt: notification.createdAt
+    });
+
+    // Send push notification
+    if (notificationData.pushPayload) {
+      await sendPushNotifications(userId, notificationData.pushPayload);
+    }
+
+    // Send email notification
+    if (userEmail && notificationData.emailContent) {
+      await sendEmailNotification(
+        userEmail,
+        notificationData.emailContent.subject,
+        notificationData.emailContent.html
+      );
+    }
+
+    return notification;
+  } catch (error) {
+    console.error('Error in sendNotification:', error);
+    throw error;
   }
 };
 
@@ -27,7 +109,13 @@ const createTodo = async (req, res) => {
   try {
     const { task, isCompleted, description, dueDate, priority, user, list, project } = req.body;
 
-    if (!task) return res.status(400).json({ message: "Task is required" });
+    if (!task) {
+      return res.status(400).json({ message: "Task is required" });
+    }
+
+    if (!user) {
+      return res.status(400).json({ message: "User is required" });
+    }
 
     const newTodo = new Todo({ 
       task, 
@@ -39,24 +127,38 @@ const createTodo = async (req, res) => {
       list: list || "general", 
       project: project || null
     });
-    const savedTodo = await newTodo.save();
 
+    const savedTodo = await newTodo.save();
     const message = `New todo created: "${savedTodo.task}"`;
 
-    await Notification.create({ user, todoId: savedTodo._id, message, type: 'new_todo', read: false });
-    io.emit('newNotification', { userId: user, message });
-    await sendPushNotifications(user, { title: "New Todo", body: message });
-
-    await transporter.sendMail({
-      from: EMAIL_USER,
-      to: req.user.email,
-      subject: 'New Todo Created',
-      html: `<p>Your new task: <strong>${savedTodo.task}</strong> has been created.</p>`
-    });
+    // Send comprehensive notification
+    await sendNotification(user, {
+      todoId: savedTodo._id,
+      message,
+      type: 'new_todo',
+      pushPayload: {
+        title: "New Todo Created",
+        body: message,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        data: { todoId: savedTodo._id, type: 'new_todo' }
+      },
+      emailContent: req.user?.email ? {
+        subject: 'New Todo Created',
+        html: `<p>Your new task: <strong>${savedTodo.task}</strong> has been created.</p>
+               ${description ? `<p>Description: ${description}</p>` : ''}
+               ${dueDate ? `<p>Due Date: ${new Date(dueDate).toLocaleDateString()}</p>` : ''}`
+      } : null
+    }, req.user?.email);
 
     res.status(201).json(savedTodo);
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error creating todo", error: error.message });
+    console.error('Error creating todo:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error creating todo", 
+      error: error.message 
+    });
   }
 };
 
@@ -64,38 +166,57 @@ const createTodo = async (req, res) => {
 const toggleTodoStatus = async (req, res) => {
   try {
     const todoId = req.params.id;
-    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) return res.status(400).json({ message: "Invalid ID" });
-
-    const todo = await Todo.findById(todoId);
-    if (!todo) return res.status(404).json({ message: "Todo not found" });
-
-    todo.isCompleted = !todo.isCompleted;
-    todo.completeDate = todo.isCompleted ? new Date() : null;
-    const updatedTodo = await todo.save();
-
-    if (updatedTodo.isCompleted) {
-      const message = `Todo completed: "${updatedTodo.task}"`;
-
-      await Notification.findOneAndUpdate(
-        { user: updatedTodo.user, todoId: updatedTodo._id, type: 'todo_completed' },
-        { $set: { message, read: false } },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-
-      io.emit('newNotification', { userId: updatedTodo.user, message });
-      await sendPushNotifications(updatedTodo.user, { title: "Task Completed", body: message });
-
-      await transporter.sendMail({
-        from: EMAIL_USER,
-        to: req.user.email,
-        subject: 'Todo Completed',
-        html: `<p>Your task <strong>${updatedTodo.task}</strong> has been completed.</p>`
-      });
+    
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid ID format" });
     }
 
-    res.status(200).json({ success: true, message: "Todo status updated", data: updatedTodo });
+    const todo = await Todo.findById(todoId);
+    if (!todo) {
+      return res.status(404).json({ message: "Todo not found" });
+    }
+
+    const wasCompleted = todo.isCompleted;
+    todo.isCompleted = !todo.isCompleted;
+    todo.completeDate = todo.isCompleted ? new Date() : null;
+    
+    const updatedTodo = await todo.save();
+
+    // Only send notifications when completing (not when uncompleting)
+    if (updatedTodo.isCompleted && !wasCompleted) {
+      const message = `Todo completed: "${updatedTodo.task}"`;
+
+      // Send comprehensive notification
+      await sendNotification(updatedTodo.user, {
+        todoId: updatedTodo._id,
+        message,
+        type: 'todo_completed',
+        pushPayload: {
+          title: "Task Completed! 🎉",
+          body: message,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          data: { todoId: updatedTodo._id, type: 'todo_completed' }
+        },
+        emailContent: req.user?.email ? {
+          subject: 'Todo Completed',
+          html: `<p>Congratulations! Your task <strong>${updatedTodo.task}</strong> has been completed.</p>
+                 <p>Completion Date: ${new Date().toLocaleDateString()}</p>`
+        } : null
+      }, req.user?.email);
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Todo status updated successfully", 
+      data: updatedTodo 
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error toggling status", error: error.message });
+    console.error('Error toggling todo status:', error);
+    res.status(500).json({ 
+      message: "Error toggling status", 
+      error: error.message 
+    });
   }
 };
 
@@ -105,17 +226,34 @@ const updateTodo = async (req, res) => {
     const todoId = req.params.id;
     const updates = req.body;
 
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+
     const updatedTodo = await Todo.findByIdAndUpdate(todoId, updates, { new: true });
-    if (!updatedTodo) return res.status(404).json({ error: "Todo not found" });
+    if (!updatedTodo) {
+      return res.status(404).json({ error: "Todo not found" });
+    }
 
     const message = `Todo updated: "${updatedTodo.task}"`;
 
-    await Notification.create({ user: updatedTodo.user, todoId: updatedTodo._id, message, type: 'todo_updated', read: false });
-    io.emit('newNotification', { userId: updatedTodo.user, message });
-    await sendPushNotifications(updatedTodo.user, { title: "Todo Updated", body: message });
+    // Send comprehensive notification
+    await sendNotification(updatedTodo.user, {
+      todoId: updatedTodo._id,
+      message,
+      type: 'todo_updated',
+      pushPayload: {
+        title: "Todo Updated",
+        body: message,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        data: { todoId: updatedTodo._id, type: 'todo_updated' }
+      }
+    });
 
     res.json(updatedTodo);
   } catch (error) {
+    console.error('Error updating todo:', error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
@@ -124,17 +262,35 @@ const updateTodo = async (req, res) => {
 const deleteTodo = async (req, res) => {
   try {
     const todoId = req.params.id;
+
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+
     const deletedTodo = await Todo.findByIdAndDelete(todoId);
-    if (!deletedTodo) return res.status(404).json({ error: "Todo not found" });
+    if (!deletedTodo) {
+      return res.status(404).json({ error: "Todo not found" });
+    }
 
     const message = `Todo deleted: "${deletedTodo.task}"`;
 
-    await Notification.create({ user: deletedTodo.user, todoId: deletedTodo._id, message, type: 'todo_deleted', read: false });
-    io.emit('newNotification', { userId: deletedTodo.user, message });
-    await sendPushNotifications(deletedTodo.user, { title: "Todo Deleted", body: message });
+    // Send comprehensive notification
+    await sendNotification(deletedTodo.user, {
+      todoId: deletedTodo._id,
+      message,
+      type: 'todo_deleted',
+      pushPayload: {
+        title: "Todo Deleted",
+        body: message,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        data: { todoId: deletedTodo._id, type: 'todo_deleted' }
+      }
+    });
 
     res.json({ message: "Todo deleted successfully" });
   } catch (error) {
+    console.error('Error deleting todo:', error);
     res.status(500).json({ error: "Error deleting todo" });
   }
 };
@@ -149,14 +305,25 @@ const updateTodoPriority = async (req, res) => {
       return res.status(400).json({ message: "Invalid priority value" });
     }
 
+    if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid ID format" });
+    }
+
     const todo = await Todo.findById(todoId);
-    if (!todo) return res.status(404).json({ message: "Todo not found" });
+    if (!todo) {
+      return res.status(404).json({ message: "Todo not found" });
+    }
 
     todo.priority = priority;
     const updatedTodo = await todo.save();
 
-    res.status(200).json({ success: true, message: "Priority updated", data: updatedTodo });
+    res.status(200).json({ 
+      success: true, 
+      message: "Priority updated successfully", 
+      data: updatedTodo 
+    });
   } catch (error) {
+    console.error('Error updating priority:', error);
     res.status(500).json({ error: "Error updating priority" });
   }
 };
@@ -168,23 +335,25 @@ const getTodosByUser = async (req, res) => {
     const projectId = req.query.project;
     const excludeProjectTodos = req.query.excludeProjectTodos === 'true';
 
-    if (!userId) return res.status(400).json({ message: "User ID required" });
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
 
     const query = { user: userId };
 
     if (projectId) {
       query.project = projectId;
     } else if (excludeProjectTodos) {
-      query.project = { $eq: null }; // ✅ Properly exclude project-based todos
+      query.project = { $eq: null };
     }
 
-    const todos = await Todo.find(query);
+    const todos = await Todo.find(query).sort({ createdAt: -1 });
     res.status(200).json(todos);
   } catch (error) {
+    console.error('Error fetching todos:', error);
     res.status(500).json({ error: "Error fetching todos" });
   }
 };
-
 
 module.exports = {
   createTodo,
