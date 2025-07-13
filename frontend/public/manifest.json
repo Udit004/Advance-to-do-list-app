@@ -1,10 +1,16 @@
 {
-  "name": "Advance To-Do List App",
+  "name": "ZenList Advance To-Do | Udit Kumar Tiwari",
   "short_name": "zenList",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3399cc",
+  "orientation": "portrait",
+  "lang": "en",
+  "dir": "ltr",
+
+  "description": "ZenList Advance To-Do is a productivity-focused web app by Udit Kumar Tiwari. Organize your life with smart task management, real-time sync, and a clean interface.",
+
   "icons": [
     {
       "src": "/zenList-192.png",
@@ -17,18 +23,24 @@
       "type": "image/png"
     }
   ],
-  "screenshots": [
-  {
-    "src": "/screenshot-1920x971.png",
-    "sizes": "1920x971",
-    "type": "image/png",
-    "form_factor": "wide"
-  },
-  {
-    "src": "/screenshot-390x844.png",
-    "sizes": "390x844",
-    "type": "image/png"
-  }
-]
 
+  "screenshots": [
+    {
+      "src": "/screenshot-1920x971.png",
+      "sizes": "1920x971",
+      "type": "image/png",
+      "platform": "wide"
+    },
+    {
+      "src": "/screenshot-390x844.png",
+      "sizes": "390x844",
+      "type": "image/png"
+    }
+  ],
+
+  "categories": [
+    "productivity",
+    "utilities",
+    "task-management"
+  ]
 }

@@ -1,4 +1,11 @@
+# Allow all search engines to crawl everything
 User-agent: *
 Allow: /
 
+# Disallow crawling of common sensitive or non-SEO pages
+Disallow: /login
+Disallow: /signup
+Disallow: /profile
+
+# Point to the sitemap
 Sitemap: https://advance-to-do-list-app.vercel.app/sitemap.xml
