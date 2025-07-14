@@ -63,14 +63,35 @@ const sendEmailNotification = async (userEmail, subject, htmlContent) => {
 // Utility function: Send comprehensive notification
 const sendNotification = async (userId, notificationData, userEmail = null) => {
   try {
-    // Create notification in database
-    const notification = await Notification.create({
+    // Check if notification already exists to prevent duplicates
+    const existingNotification = await Notification.findOne({
       user: userId,
       todoId: notificationData.todoId,
-      message: notificationData.message,
-      type: notificationData.type,
-      read: false
+      type: notificationData.type
     });
+
+    let notification;
+    if (existingNotification) {
+      // Update existing notification
+      notification = await Notification.findByIdAndUpdate(
+        existingNotification._id,
+        {
+          message: notificationData.message,
+          read: false,
+          updatedAt: new Date()
+        },
+        { new: true }
+      );
+    } else {
+      // Create new notification
+      notification = await Notification.create({
+        user: userId,
+        todoId: notificationData.todoId,
+        message: notificationData.message,
+        type: notificationData.type,
+        read: false
+      });
+    }
 
     // Send real-time notification via Socket.IO
     sendNotificationToUser(userId, {
@@ -100,7 +121,8 @@ const sendNotification = async (userId, notificationData, userEmail = null) => {
     return notification;
   } catch (error) {
     console.error('Error in sendNotification:', error);
-    throw error;
+    // Don't throw error for notification failures - continue with main operation
+    return null;
   }
 };
 
@@ -129,10 +151,10 @@ const createTodo = async (req, res) => {
     });
 
     const savedTodo = await newTodo.save();
+    
+    // Send notification in background
     const message = `New todo created: "${savedTodo.task}"`;
-
-    // Send comprehensive notification
-    await sendNotification(user, {
+    sendNotification(user, {
       todoId: savedTodo._id,
       message,
       type: 'new_todo',
@@ -149,7 +171,9 @@ const createTodo = async (req, res) => {
                ${description ? `<p>Description: ${description}</p>` : ''}
                ${dueDate ? `<p>Due Date: ${new Date(dueDate).toLocaleDateString()}</p>` : ''}`
       } : null
-    }, req.user?.email);
+    }, req.user?.email).catch(err => {
+      console.error('Background notification error:', err);
+    });
 
     res.status(201).json(savedTodo);
   } catch (error) {
@@ -166,6 +190,7 @@ const createTodo = async (req, res) => {
 const toggleTodoStatus = async (req, res) => {
   try {
     const todoId = req.params.id;
+    const { isCompleted } = req.body;
     
     if (!todoId.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({ message: "Invalid ID format" });
@@ -177,17 +202,17 @@ const toggleTodoStatus = async (req, res) => {
     }
 
     const wasCompleted = todo.isCompleted;
-    todo.isCompleted = !todo.isCompleted;
+    todo.isCompleted = isCompleted !== undefined ? isCompleted : !todo.isCompleted;
     todo.completeDate = todo.isCompleted ? new Date() : null;
     
     const updatedTodo = await todo.save();
 
-    // Only send notifications when completing (not when uncompleting)
+    // Send notification in background - don't let it block the response
     if (updatedTodo.isCompleted && !wasCompleted) {
       const message = `Todo completed: "${updatedTodo.task}"`;
 
-      // Send comprehensive notification
-      await sendNotification(updatedTodo.user, {
+      // Send comprehensive notification (async - don't await)
+      sendNotification(updatedTodo.user, {
         todoId: updatedTodo._id,
         message,
         type: 'todo_completed',
@@ -203,7 +228,9 @@ const toggleTodoStatus = async (req, res) => {
           html: `<p>Congratulations! Your task <strong>${updatedTodo.task}</strong> has been completed.</p>
                  <p>Completion Date: ${new Date().toLocaleDateString()}</p>`
         } : null
-      }, req.user?.email);
+      }, req.user?.email).catch(err => {
+        console.error('Background notification error:', err);
+      });
     }
 
     res.status(200).json({ 
@@ -214,6 +241,7 @@ const toggleTodoStatus = async (req, res) => {
   } catch (error) {
     console.error('Error toggling todo status:', error);
     res.status(500).json({ 
+      success: false,
       message: "Error toggling status", 
       error: error.message 
     });
@@ -230,15 +258,29 @@ const updateTodo = async (req, res) => {
       return res.status(400).json({ error: "Invalid ID format" });
     }
 
-    const updatedTodo = await Todo.findByIdAndUpdate(todoId, updates, { new: true });
+    // Remove fields that shouldn't be updated or are handled separately
+    const allowedUpdates = ['task', 'description', 'dueDate', 'priority', 'list'];
+    const filteredUpdates = {};
+    
+    allowedUpdates.forEach(field => {
+      if (updates[field] !== undefined) {
+        filteredUpdates[field] = updates[field];
+      }
+    });
+
+    const updatedTodo = await Todo.findByIdAndUpdate(
+      todoId, 
+      { ...filteredUpdates, updatedAt: new Date() }, 
+      { new: true, runValidators: true }
+    );
+    
     if (!updatedTodo) {
       return res.status(404).json({ error: "Todo not found" });
     }
 
+    // Send notification in background
     const message = `Todo updated: "${updatedTodo.task}"`;
-
-    // Send comprehensive notification
-    await sendNotification(updatedTodo.user, {
+    sendNotification(updatedTodo.user, {
       todoId: updatedTodo._id,
       message,
       type: 'todo_updated',
@@ -249,12 +291,18 @@ const updateTodo = async (req, res) => {
         badge: '/favicon.ico',
         data: { todoId: updatedTodo._id, type: 'todo_updated' }
       }
+    }).catch(err => {
+      console.error('Background notification error:', err);
     });
 
-    res.json(updatedTodo);
+    res.status(200).json(updatedTodo);
   } catch (error) {
     console.error('Error updating todo:', error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ 
+      success: false,
+      error: "Error updating todo",
+      message: error.message 
+    });
   }
 };
 
@@ -272,10 +320,9 @@ const deleteTodo = async (req, res) => {
       return res.status(404).json({ error: "Todo not found" });
     }
 
+    // Send notification in background
     const message = `Todo deleted: "${deletedTodo.task}"`;
-
-    // Send comprehensive notification
-    await sendNotification(deletedTodo.user, {
+    sendNotification(deletedTodo.user, {
       todoId: deletedTodo._id,
       message,
       type: 'todo_deleted',
@@ -286,12 +333,21 @@ const deleteTodo = async (req, res) => {
         badge: '/favicon.ico',
         data: { todoId: deletedTodo._id, type: 'todo_deleted' }
       }
+    }).catch(err => {
+      console.error('Background notification error:', err);
     });
 
-    res.json({ message: "Todo deleted successfully" });
+    res.status(200).json({ 
+      success: true,
+      message: "Todo deleted successfully" 
+    });
   } catch (error) {
     console.error('Error deleting todo:', error);
-    res.status(500).json({ error: "Error deleting todo" });
+    res.status(500).json({ 
+      success: false,
+      error: "Error deleting todo",
+      message: error.message 
+    });
   }
 };
 
@@ -315,6 +371,7 @@ const updateTodoPriority = async (req, res) => {
     }
 
     todo.priority = priority;
+    todo.updatedAt = new Date();
     const updatedTodo = await todo.save();
 
     res.status(200).json({ 
@@ -324,7 +381,11 @@ const updateTodoPriority = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating priority:', error);
-    res.status(500).json({ error: "Error updating priority" });
+    res.status(500).json({ 
+      success: false,
+      error: "Error updating priority",
+      message: error.message 
+    });
   }
 };
 
@@ -351,7 +412,11 @@ const getTodosByUser = async (req, res) => {
     res.status(200).json(todos);
   } catch (error) {
     console.error('Error fetching todos:', error);
-    res.status(500).json({ error: "Error fetching todos" });
+    res.status(500).json({ 
+      success: false,
+      error: "Error fetching todos",
+      message: error.message 
+    });
   }
 };
 

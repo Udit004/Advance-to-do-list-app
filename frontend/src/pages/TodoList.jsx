@@ -58,21 +58,31 @@ const TodoList = () => {
 
     try {
       if (originalTodo) {
-        // This is an update - the TodoForm already handled the API call
-        // Just update the local state with the returned data
+        // Update existing todo
+        const response = await API.put(`/todos/update/${originalTodo._id}`, {
+          ...taskData,
+          user: currentUser.uid
+        });
+        
+        // Update local state with the response data
         setTasks(prevTasks =>
           prevTasks.map(task =>
-            task._id === originalTodo._id ? taskData : task
+            task._id === originalTodo._id ? response.data : task
           )
         );
         setEditingTodo(null);
       } else {
-        // This is a create - the TodoForm already handled the API call
-        // Just update the local state with the returned data
-        setTasks(prevTasks => [...prevTasks, taskData]);
+        // Create new todo
+        const response = await API.post('/todos/create', {
+          ...taskData,
+          user: currentUser.uid
+        });
+        
+        // Add new todo to local state
+        setTasks(prevTasks => [...prevTasks, response.data]);
       }
     } catch (error) {
-      console.error("Error creating todo:", error);
+      console.error("Error saving todo:", error);
     }
   };
 
@@ -102,7 +112,7 @@ const TodoList = () => {
       const response = await API.patch(`/todos/toggle/${id}`, { isCompleted: isChecked });
       setTasks(prevTasks =>
         prevTasks.map(task =>
-          task._id === id ? response.data : task
+          task._id === id ? response.data.data : task
         )
       );
     } catch (error) {
