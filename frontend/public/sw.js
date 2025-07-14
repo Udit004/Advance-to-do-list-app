@@ -1,10 +1,10 @@
-// Service Worker for Push Notifications
-const CACHE_NAME = 'todo-app-v1';
+// sw.js - Simplified Service Worker
+const CACHE_NAME = 'zenlist-v1.3';
 const urlsToCache = [
   '/',
-  '/static/js/bundle.js',
-  '/static/css/main.css',
-  '/manifest.json'
+  '/manifest.json',
+  '/zenList-192.png',
+  '/zenList-512.png'
 ];
 
 // Install event
@@ -13,9 +13,12 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        // Add URLs one by one to handle failures gracefully
+        return Promise.allSettled(
+          urlsToCache.map(url => cache.add(url))
+        );
       })
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -27,12 +30,11 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
@@ -41,82 +43,74 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // Return cached version or fetch from network
         return response || fetch(event.request);
+      })
+      .catch(() => {
+        if (event.request.destination === 'document') {
+          return caches.match('/');
+        }
       })
   );
 });
 
-// Push event - Handle incoming push notifications
+// Push event
 self.addEventListener('push', (event) => {
   console.log('Push event received:', event);
-  
-  const options = {
-    body: 'You have a new notification',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
-    vibrate: [100, 50, 100],
+
+  let notificationData = {
+    title: 'ZenList',
+    body: 'You have a new task notification',
+    icon: '/zenList-192.png',
+    badge: '/zenList-192.png',
+    tag: 'zenlist-notification',
+    vibrate: [200, 100, 200],
     data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    },
-    actions: [
-      {
-        action: 'explore',
-        title: 'View',
-        icon: '/favicon.ico'
-      },
-      {
-        action: 'close',
-        title: 'Close',
-        icon: '/favicon.ico'
-      }
-    ]
+      timestamp: Date.now(),
+      url: '/'
+    }
   };
 
   if (event.data) {
     try {
       const data = event.data.json();
-      options.title = data.title || 'Todo App';
-      options.body = data.body || 'You have a new notification';
-      options.icon = data.icon || '/favicon.ico';
-      options.data = { ...options.data, ...data.data };
+      notificationData = {
+        ...notificationData,
+        ...data,
+        data: {
+          ...data,
+          timestamp: Date.now()
+        }
+      };
     } catch (error) {
       console.error('Error parsing push data:', error);
-      options.title = 'Todo App';
     }
-  } else {
-    options.title = 'Todo App';
   }
 
   event.waitUntil(
-    self.registration.showNotification(options.title, options)
+    self.registration.showNotification(notificationData.title, notificationData)
   );
 });
 
-// Notification click event
+// Notification click
 self.addEventListener('notificationclick', (event) => {
-  console.log('Notification click received:', event);
+  console.log('Notification clicked:', event);
   
   event.notification.close();
-
-  if (event.action === 'close') {
-    return;
-  }
-
+  
+  const clickUrl = event.notification.data?.url || '/';
+  
   event.waitUntil(
-    self.clients.openWindow('/')
+    self.clients.matchAll({ type: 'window' }).then((clients) => {
+      // Focus existing window if available
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin)) {
+          return client.focus();
+        }
+      }
+      // Open new window if no existing one
+      return self.clients.openWindow(clickUrl);
+    })
   );
 });
 
-// Background sync (optional - for offline functionality)
-self.addEventListener('sync', (event) => {
-  console.log('Background sync event:', event);
-  
-  if (event.tag === 'background-sync') {
-    event.waitUntil(
-      // Handle background sync logic here
-      console.log('Background sync completed')
-    );
-  }
-});
+console.log('Service Worker loaded successfully');

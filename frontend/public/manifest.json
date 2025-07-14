@@ -1,46 +1,60 @@
 {
   "name": "ZenList Advance To-Do | Udit Kumar Tiwari",
-  "short_name": "zenList",
+  "short_name": "ZenList",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#3399cc",
-  "orientation": "portrait",
+  "theme_color": "#1976d2",
+  "orientation": "portrait-primary",
   "lang": "en",
   "dir": "ltr",
-
-  "description": "ZenList Advance To-Do is a productivity-focused web app by Udit Kumar Tiwari. Organize your life with smart task management, real-time sync, and a clean interface.",
-
+  "scope": "/",
+  "id": "zenlist-todo-app",
+  "description": "ZenList Advance To-Do is a productivity-focused web app by Udit Kumar Tiwari. Organize your life with smart task management, real-time sync, offline support, and native-like push notifications.",
   "icons": [
     {
       "src": "/zenList-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/zenList-512.png",
       "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
-
-  "screenshots": [
-    {
-      "src": "/screenshot-1920x971.png",
-      "sizes": "1920x971",
       "type": "image/png",
-      "platform": "wide"
-    },
-    {
-      "src": "/screenshot-390x844.png",
-      "sizes": "390x844",
-      "type": "image/png"
+      "purpose": "any maskable"
     }
   ],
-
   "categories": [
     "productivity",
     "utilities",
-    "task-management"
-  ]
+    "lifestyle",
+    "business"
+  ],
+  "shortcuts": [
+    {
+      "name": "Add New Task",
+      "short_name": "New Task",
+      "description": "Quickly add a new task to your list",
+      "url": "/?action=new-task"
+    },
+    {
+      "name": "Today's Tasks",
+      "short_name": "Today",
+      "description": "View tasks due today",
+      "url": "/?filter=today"
+    }
+  ],
+  "permissions": [
+    "notifications",
+    "persistent-storage"
+  ],
+  "prefer_related_applications": false,
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "capture_links": "existing-client-navigate",
+  "handle_links": "preferred"
 }

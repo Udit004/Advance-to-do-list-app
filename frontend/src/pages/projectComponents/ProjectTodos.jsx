@@ -203,7 +203,6 @@ const ProjectTodos = () => {
         return;
 
       try {
-        const originalTodos = todos;
         const todoToDelete = todos.find(t => t._id === todoId);
 
         // Optimistically update UI
@@ -221,7 +220,7 @@ const ProjectTodos = () => {
         toast.error('Failed to remove task from project');
         
         // Revert on error
-        setTodos(originalTodos);
+        setTodos((prev) => [...prev, todoToDelete]);
       }
     },
     [todos, projectId]
