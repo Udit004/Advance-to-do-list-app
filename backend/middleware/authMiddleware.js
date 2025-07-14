@@ -3,9 +3,9 @@ const admin = require('firebase-admin');
 const authMiddleware = async (req, res, next) => {
   try {
     console.log('Auth Middleware executed');
-    console.log('Request Headers:', req.headers); // Log all request headers
-    const idToken = req.headers.authorization?.split('Bearer ')[1];
-    console.log('Received ID Token:', idToken ? 'Token received' : 'No token received'); // Log if token is present
+    // console.log('Request Headers:', req.headers); // Log all request headers
+    // const idToken = req.headers.authorization?.split('Bearer ')[1];
+    // console.log('Received ID Token:', idToken ? 'Token received' : 'No token received'); // Log if token is present
 
     if (!idToken) {
       return res.status(401).json({ message: 'No authentication token provided.' });

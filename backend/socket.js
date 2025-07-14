@@ -8,8 +8,7 @@ const initializeSocket = (server) => {
       origin: [
         "http://localhost:5173", 
         "https://advance-to-do-list-app.vercel.app",
-        "http://localhost:3000",
-        "https://localhost:5173"
+        "http://localhost:3000"
       ],
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
       credentials: true,
@@ -19,14 +18,13 @@ const initializeSocket = (server) => {
     allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
-    // Add these for better compatibility
     maxHttpBufferSize: 1e6,
     connectTimeout: 60000,
-    // Ensure proper namespace handling
-    path: '/socket.io/',
-    serveClient: false
+    // Remove problematic path configuration
+    serveClient: false,
+    // Add proper namespace handling
+    namespace: '/'
   });
-
   // Handle connection
   io.on('connection', (socket) => {
     console.log('✅ User connected:', socket.id);

@@ -7,20 +7,31 @@ const useSocket = (userId) => {
   const [connectionError, setConnectionError] = useState(null);
   const socketRef = useRef(null);
   const listenersRef = useRef(new Map());
+  const isConnectingRef = useRef(false);
 
   // Initialize socket connection
   useEffect(() => {
-    if (!userId) {
+    if (!userId || isConnectingRef.current) {
       return;
     }
 
+    console.log("🔧 useSocket: Initializing socket for user:", userId);
+
+    // Prevent multiple connections
+    isConnectingRef.current = true;
+
     // Clean up existing connection
     if (socketRef.current) {
+      console.log("🧹 useSocket: Cleaning up existing socket connection");
       socketRef.current.disconnect();
       socketRef.current = null;
     }
 
-    const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    // Fix: Get the base URL without /api
+    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+    // Remove /api from the end if it exists
+    const socketUrl = baseUrl.replace(/\/api$/, '');
+    console.log("🔧 useSocket: Connecting to socket URL:", socketUrl);
 
     socketRef.current = io(socketUrl, {
       withCredentials: true,
@@ -31,65 +42,86 @@ const useSocket = (userId) => {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       autoConnect: true,
-      // Fix namespace issue
-      path: "/socket.io/",
-      forceNew: false,
+      // Remove forceNew to prevent issues
+      upgrade: true,
     });
 
     const socket = socketRef.current;
 
-    // Connection event handlers
+    // Enhanced connection event handlers
     socket.on("connect", () => {
-      console.log("✅ Socket connected successfully with ID:", socket.id);
+      console.log("✅ useSocket: Socket connected successfully");
+      console.log("   - Socket ID:", socket.id);
+      console.log("   - Transport:", socket.io.engine.transport.name);
+
       setIsConnected(true);
       setConnectionError(null);
+      isConnectingRef.current = false;
 
       // Join user's room for targeted notifications
       socket.emit("join", userId);
+      console.log("📡 useSocket: Emitted join event for user:", userId);
     });
 
     socket.on("joined", (data) => {
-      console.log("✅ Successfully joined room:", data);
+      console.log("✅ useSocket: Successfully joined room:", data);
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("❌ Socket disconnected:", reason);
+      console.log("❌ useSocket: Socket disconnected:", reason);
       setIsConnected(false);
+      isConnectingRef.current = false;
 
       // Only emit leave if socket is still connected
       if (socket.connected) {
         socket.emit("leave", userId);
+        console.log("📡 useSocket: Emitted leave event for user:", userId);
       }
     });
 
     socket.on("connect_error", (error) => {
-      console.error("❌ Socket connection error:", error);
+      console.error("❌ useSocket: Socket connection error:", error.message);
+      console.error("   - Error type:", error.type);
+      console.error("   - Error description:", error.description);
+
       setIsConnected(false);
-      setConnectionError("Connection error. Retrying...");
+      isConnectingRef.current = false;
+
+      // Handle specific error types
+      if (error.message.includes("Invalid namespace")) {
+        setConnectionError("Configuration error. Please contact support.");
+      } else if (error.message.includes("timeout")) {
+        setConnectionError("Connection timeout. Retrying...");
+      } else {
+        setConnectionError("Connection error. Retrying...");
+      }
     });
 
     socket.on("reconnect", (attemptNumber) => {
-      console.log("🔄 Socket reconnected after", attemptNumber, "attempts");
+      console.log("🔄 useSocket: Socket reconnected after", attemptNumber, "attempts");
       setIsConnected(true);
       setConnectionError(null);
+      isConnectingRef.current = false;
 
       // Rejoin user's room
       socket.emit("join", userId);
+      console.log("📡 useSocket: Re-emitted join event for user:", userId);
     });
 
     socket.on("reconnect_error", (error) => {
-      console.error("❌ Socket reconnection error:", error);
+      console.error("❌ useSocket: Socket reconnection error:", error);
       setConnectionError("Reconnection failed. Retrying...");
     });
 
     socket.on("reconnect_failed", () => {
-      console.error("❌ Socket reconnection failed completely");
+      console.error("❌ useSocket: Socket reconnection failed completely");
       setConnectionError("Connection failed. Please refresh the page.");
+      isConnectingRef.current = false;
     });
 
     // Handle pong response
     socket.on("pong", () => {
-      console.log("🏓 Received pong from server");
+      console.log("🏓 useSocket: Received pong from server");
     });
 
     // Cleanup function
@@ -104,6 +136,7 @@ const useSocket = (userId) => {
         // Emit leave if still connected
         if (socket.connected) {
           socket.emit("leave", userId);
+          console.log("📡 useSocket: Emitted leave event during cleanup for user:", userId);
         }
 
         // Remove built-in event listeners
@@ -120,6 +153,7 @@ const useSocket = (userId) => {
         socketRef.current = null;
       }
       setIsConnected(false);
+      isConnectingRef.current = false;
     };
   }, [userId]);
 
@@ -151,7 +185,7 @@ const useSocket = (userId) => {
       if (socketRef.current && isConnected) {
         socketRef.current.emit(event, data);
       } else {
-        console.warn("⚠️ Cannot emit event - socket not connected:", event);
+        console.warn("⚠️ useSocket: Cannot emit event - socket not connected:", event);
       }
     },
     [isConnected]
