@@ -1,12 +1,27 @@
-// pushNotifications.js - Simplified version
+// Enhanced pushNotifications.js for mobile compatibility
 import API from '../api/config';
 
 const publicVapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
-// Register service worker with proper error handling
+// Check if device supports push notifications
+export function isPushNotificationSupported() {
+  return (
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    'Notification' in window &&
+    'showNotification' in ServiceWorkerRegistration.prototype
+  );
+}
+
+// Check if device is mobile
+export function isMobileDevice() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Register service worker with mobile-specific optimizations
 export async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) {
-    throw new Error("Service workers are not supported");
+  if (!isPushNotificationSupported()) {
+    throw new Error("Push notifications are not supported on this device");
   }
 
   try {
@@ -18,6 +33,11 @@ export async function registerServiceWorker() {
     // Wait for service worker to be ready
     await navigator.serviceWorker.ready;
 
+    // For mobile devices, wait a bit longer for service worker to be fully active
+    if (isMobileDevice()) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
     console.log("✅ Service Worker registered successfully");
     return registration;
   } catch (error) {
@@ -26,23 +46,36 @@ export async function registerServiceWorker() {
   }
 }
 
-// Ask for notification permission
+// Enhanced permission request with mobile-specific handling
 export async function askNotificationPermission() {
   if (!("Notification" in window)) {
     console.error("Notifications not supported");
     return false;
   }
 
-  if (Notification.permission === "granted") {
+  // Check current permission status
+  let permission = Notification.permission;
+  
+  if (permission === "granted") {
     return true;
   }
 
-  if (Notification.permission === "denied") {
+  if (permission === "denied") {
+    // On mobile, show user-friendly message about enabling notifications in settings
+    if (isMobileDevice()) {
+      console.warn("Notifications are blocked. Please enable them in your browser settings.");
+      return false;
+    }
     return false;
   }
 
   try {
-    const permission = await Notification.requestPermission();
+    // Request permission with user gesture (important for mobile)
+    permission = await Notification.requestPermission();
+    
+    // Log the result for debugging
+    console.log(`Permission result: ${permission}`);
+    
     return permission === "granted";
   } catch (error) {
     console.error("Error requesting notification permission:", error);
@@ -50,7 +83,7 @@ export async function askNotificationPermission() {
   }
 }
 
-// Subscribe to push notifications
+// Mobile-optimized subscription function
 export async function subscribeUserToPush(userId) {
   if (!userId) {
     console.error('userId is required');
@@ -66,8 +99,9 @@ export async function subscribeUserToPush(userId) {
     // Step 1: Register service worker and wait for it to be ready
     const registration = await registerServiceWorker();
     
-    // Step 2: Wait a bit for service worker to be fully active
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Step 2: Enhanced wait for mobile devices
+    const waitTime = isMobileDevice() ? 3000 : 1000;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
     
     // Step 3: Check if service worker is active
     if (!registration.active) {
@@ -86,20 +120,54 @@ export async function subscribeUserToPush(userId) {
     let subscription = await registration.pushManager.getSubscription();
     
     if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
-      });
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
+        });
+      } catch (subscribeError) {
+        console.error('Failed to subscribe:', subscribeError);
+        
+        // For mobile, try with a delay and retry
+        if (isMobileDevice()) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          try {
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
+            });
+          } catch (retryError) {
+            console.error('Retry failed:', retryError);
+            return false;
+          }
+        } else {
+          return false;
+        }
+      }
     }
 
-    // Step 6: Send to backend
+    // Step 6: Send to backend with mobile device info
+    const deviceInfo = {
+      isMobile: isMobileDevice(),
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      timestamp: Date.now()
+    };
+
     const response = await API.post('/push/subscribe', {
       subscription: subscription.toJSON(),
-      userId
+      userId,
+      deviceInfo
     });
 
     if (response.data.success) {
       console.log('✅ Push subscription successful');
+      
+      // Test notification on mobile to ensure it works
+      if (isMobileDevice()) {
+        await testNotification();
+      }
+      
       return true;
     } else {
       console.error('❌ Failed to save subscription');
@@ -112,10 +180,32 @@ export async function subscribeUserToPush(userId) {
   }
 }
 
-// Unsubscribe from push notifications
+// Test notification function
+async function testNotification() {
+  try {
+    if (Notification.permission === 'granted') {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification('ZenList', {
+        body: 'Push notifications are now enabled!',
+        icon: '/zenList-192.png',
+        badge: '/zenList-192.png',
+        tag: 'test-notification',
+        vibrate: [200, 100, 200],
+        data: {
+          timestamp: Date.now(),
+          url: '/'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Test notification failed:', error);
+  }
+}
+
+// Enhanced unsubscribe function
 export async function unsubscribeFromPush(userId) {
   try {
-    if ("serviceWorker" in navigator) {
+    if (isPushNotificationSupported()) {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       
@@ -125,7 +215,11 @@ export async function unsubscribeFromPush(userId) {
         if (userId) {
           await API.post('/push/unsubscribe', {
             userId,
-            endpoint: subscription.endpoint
+            endpoint: subscription.endpoint,
+            deviceInfo: {
+              isMobile: isMobileDevice(),
+              userAgent: navigator.userAgent
+            }
           });
         }
         
@@ -140,36 +234,47 @@ export async function unsubscribeFromPush(userId) {
   }
 }
 
-// Check subscription status
+// Enhanced subscription status check
 export async function checkSubscriptionStatus() {
   try {
-    if ("serviceWorker" in navigator && "PushManager" in window) {
+    if (isPushNotificationSupported()) {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       
       return {
         isSubscribed: !!subscription,
         hasPermission: Notification.permission === 'granted',
-        subscription: subscription ? subscription.toJSON() : null
+        subscription: subscription ? subscription.toJSON() : null,
+        isSupported: true,
+        isMobile: isMobileDevice(),
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform
+        }
       };
     }
     
     return {
       isSubscribed: false,
       hasPermission: false,
-      subscription: null
+      subscription: null,
+      isSupported: false,
+      isMobile: isMobileDevice()
     };
   } catch (error) {
     console.error('❌ Error checking subscription status:', error);
     return {
       isSubscribed: false,
       hasPermission: false,
-      subscription: null
+      subscription: null,
+      isSupported: false,
+      isMobile: isMobileDevice(),
+      error: error.message
     };
   }
 }
 
-// Helper function to convert VAPID key
+// Helper function to convert VAPID key (unchanged)
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -177,33 +282,73 @@ function urlBase64ToUint8Array(base64String) {
   return new Uint8Array([...rawData].map((char) => char.charCodeAt(0)));
 }
 
-// Initialize push notifications with retry
-export async function initializePushNotifications(userId, maxRetries = 2) {
+// Enhanced initialization with mobile-specific retry logic
+export async function initializePushNotifications(userId, maxRetries = 3) {
   let retryCount = 0;
+  const retryDelay = isMobileDevice() ? 3000 : 2000;
+  
+  console.log(`Initializing push notifications for ${isMobileDevice() ? 'mobile' : 'desktop'} device`);
   
   while (retryCount < maxRetries) {
     try {
       const success = await subscribeUserToPush(userId);
       if (success) {
-        console.log('✅ Push notifications initialized');
+        console.log('✅ Push notifications initialized successfully');
         return true;
       }
       
       retryCount++;
       if (retryCount < maxRetries) {
-        console.log(`🔄 Retry ${retryCount}/${maxRetries}`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log(`🔄 Retry ${retryCount}/${maxRetries} in ${retryDelay}ms`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     } catch (error) {
       console.error(`❌ Attempt ${retryCount + 1} failed:`, error);
       retryCount++;
       
       if (retryCount < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
   }
   
-  console.error('❌ Failed to initialize push notifications');
+  console.error('❌ Failed to initialize push notifications after all retries');
   return false;
+}
+
+// Utility function to handle page visibility changes (important for mobile)
+export function handleVisibilityChange() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      // Page became visible, good time to check subscription status
+      checkSubscriptionStatus().then(status => {
+        console.log('Current subscription status:', status);
+      });
+    }
+  });
+}
+
+// Add install prompt handling for PWA
+export function handleInstallPrompt() {
+  let deferredPrompt;
+  
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log('PWA install prompt available');
+  });
+  
+  return {
+    showInstallPrompt: async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`User ${outcome} the install prompt`);
+        deferredPrompt = null;
+        return outcome === 'accepted';
+      }
+      return false;
+    },
+    isInstallable: () => !!deferredPrompt
+  };
 }
