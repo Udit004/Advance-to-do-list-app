@@ -235,6 +235,7 @@ export class MobilePushManager {
 
   // Handle touch start for mobile interactions
   handleTouchStart(event) {
+    console.log('Touch started:', event);
     // Implement mobile-specific touch handling
     this.lastTouchTime = Date.now();
   }

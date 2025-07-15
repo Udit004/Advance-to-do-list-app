@@ -48,6 +48,7 @@ app.use("/api/razorpay", razorpayRoutes);
 
 // Other routes with JSON parsing
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 const pushRoutes = require("./routes/pushRoutes");
 
 const todoRoutes = require("./routes/todolist");
