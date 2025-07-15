@@ -37,9 +37,14 @@ const NotificationBell = ({ userId }) => {
   const handleNewNotification = useCallback(
     (notification) => {
       console.log("🔔 New notification received:", notification);
+      console.log("🔍 Current userId:", userId);
+      console.log("🔍 Notification user:", notification.user);
+      console.log("🔍 Notification userId:", notification.userId);
 
-      // Check if notification is for current user
+      // Check if notification is for current user (check both fields)
       if (notification.user === userId || notification.userId === userId) {
+        console.log("✅ Notification matches current user, adding to state");
+
         setNotifications((prevNotifications) => {
           // Check if notification already exists to avoid duplicates
           const existingNotification = prevNotifications.find(
@@ -47,24 +52,28 @@ const NotificationBell = ({ userId }) => {
           );
 
           if (!existingNotification) {
+            console.log("✅ Adding new notification to state");
             return [notification, ...prevNotifications];
+          } else {
+            console.log("⚠️ Notification already exists, skipping");
           }
 
           return prevNotifications;
         });
+      } else {
+        console.log("❌ Notification not for current user, ignoring");
       }
     },
     [userId]
   );
-
   // Initialize socket connection
   useEffect(() => {
     if (!userId || isConnectingRef.current) {
       return;
     }
 
-    console.log('🔧 Initializing socket for user:', userId);
-    
+    console.log("🔧 Initializing socket for user:", userId);
+
     // Fetch initial notifications
     fetchNotifications();
 
@@ -73,17 +82,16 @@ const NotificationBell = ({ userId }) => {
 
     // Clean up any existing socket connection
     if (socketRef.current) {
-      console.log('🧹 Cleaning up existing socket connection');
+      console.log("🧹 Cleaning up existing socket connection");
       socketRef.current.disconnect();
       socketRef.current = null;
     }
 
-    // Fix: Get the base URL without /api
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-    // Remove /api from the end if it exists
-    const socketUrl = baseUrl.replace(/\/api$/, '');
-    console.log('🔧 Connecting to socket URL:', socketUrl);
+    const socketUrl = baseUrl.replace(/\/api$/, "");
+    console.log("🔧 Connecting to socket URL:", socketUrl);
 
+    // Make sure the socket connection uses the correct configuration
     socketRef.current = io(socketUrl, {
       withCredentials: true,
       transports: ["websocket", "polling"],
@@ -93,10 +101,11 @@ const NotificationBell = ({ userId }) => {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       autoConnect: true,
-      // Remove forceNew to prevent issues
       upgrade: true,
+      // Add these important options
+      forceNew: false,
+      multiplex: true,
     });
-
     const socket = socketRef.current;
 
     // Enhanced connection logging
@@ -105,7 +114,7 @@ const NotificationBell = ({ userId }) => {
       console.log("   - Socket ID:", socket.id);
       console.log("   - Transport:", socket.io.engine.transport.name);
       console.log("   - User ID:", userId);
-      
+
       setIsConnected(true);
       setError(null);
       isConnectingRef.current = false;
@@ -135,10 +144,10 @@ const NotificationBell = ({ userId }) => {
       console.error("❌ Socket connection error:", error.message);
       console.error("   - Error type:", error.type);
       console.error("   - Error description:", error.description);
-      
+
       setIsConnected(false);
       isConnectingRef.current = false;
-      
+
       // Handle specific error types
       if (error.message.includes("Invalid namespace")) {
         setError("Configuration error. Please contact support.");
@@ -189,7 +198,7 @@ const NotificationBell = ({ userId }) => {
     return () => {
       if (socketRef.current) {
         const currentSocket = socketRef.current;
-        console.log('🧹 Cleaning up socket connection');
+        console.log("🧹 Cleaning up socket connection");
 
         // Remove event listeners first
         currentSocket.off("connect");
@@ -204,7 +213,10 @@ const NotificationBell = ({ userId }) => {
         // Emit leave if still connected
         if (currentSocket.connected) {
           currentSocket.emit("leave", userId);
-          console.log("📡 Emitted leave event during cleanup for user:", userId);
+          console.log(
+            "📡 Emitted leave event during cleanup for user:",
+            userId
+          );
         }
 
         // Disconnect and clean up

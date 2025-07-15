@@ -15,7 +15,7 @@ const notificatonshema = new mongoose.Schema({
     },
     type:{
         type: String,
-        enum: ['due_soon', 'overdue', 'custom', 'new_todo', 'todo_updated', 'todo_completed', 'todo_deleted'],
+        enum: ['due_soon', 'overdue', 'custom', 'new_todo', 'todo_updated', 'todo_completed', 'todo_deleted', 'profile_created', 'profile_updated'],
         default: 'custom'
     },
     createdAt:{
@@ -25,13 +25,8 @@ const notificatonshema = new mongoose.Schema({
     read:{
         type: Boolean,
         default: false
-    },
-    createdAt:{
-        type: Date,
-        default: Date.now
     }
 });
-
 
 notificatonshema.index({ user: 1, todoId: 1, type: 1 }, { unique: true, partialFilterExpression: { type: { $ne: 'todo_completed' } } });
 

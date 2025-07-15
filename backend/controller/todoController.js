@@ -2,7 +2,6 @@ const Todo = require('../models/todo');
 const Notification = require('../models/notificationModel');
 const PushSubscription = require('../models/pushSubscriptionModel');
 const { sendNotificationToUser } = require('../socket');
-const transporter = require('../config/email');
 const webpush = require('web-push');
 const { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, EMAIL_USER } = process.env;
 
@@ -40,28 +39,8 @@ const sendPushNotifications = async (userId, payload) => {
   }
 };
 
-// Utility function: Send email notification
-const sendEmailNotification = async (userEmail, subject, htmlContent) => {
-  try {
-    if (!userEmail || !transporter) {
-      console.log('Email notification skipped - missing email or transporter');
-      return;
-    }
-
-    await transporter.sendMail({
-      from: EMAIL_USER,
-      to: userEmail,
-      subject,
-      html: htmlContent
-    });
-    console.log('Email notification sent successfully');
-  } catch (error) {
-    console.error('Email notification failed:', error);
-  }
-};
-
-// Utility function: Send comprehensive notification
-const sendNotification = async (userId, notificationData, userEmail = null) => {
+// Utility function: Send notification (Socket.IO + Push only)
+const sendNotification = async (userId, notificationData) => {
   try {
     // Check if notification already exists to prevent duplicates
     const existingNotification = await Notification.findOne({
@@ -109,15 +88,6 @@ const sendNotification = async (userId, notificationData, userEmail = null) => {
       await sendPushNotifications(userId, notificationData.pushPayload);
     }
 
-    // Send email notification
-    if (userEmail && notificationData.emailContent) {
-      await sendEmailNotification(
-        userEmail,
-        notificationData.emailContent.subject,
-        notificationData.emailContent.html
-      );
-    }
-
     return notification;
   } catch (error) {
     console.error('Error in sendNotification:', error);
@@ -152,7 +122,7 @@ const createTodo = async (req, res) => {
 
     const savedTodo = await newTodo.save();
     
-    // Send notification in background
+    // Send notification in background (Socket.IO + Push only)
     const message = `New todo created: "${savedTodo.task}"`;
     sendNotification(user, {
       todoId: savedTodo._id,
@@ -164,14 +134,8 @@ const createTodo = async (req, res) => {
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         data: { todoId: savedTodo._id, type: 'new_todo' }
-      },
-      emailContent: req.user?.email ? {
-        subject: 'New Todo Created',
-        html: `<p>Your new task: <strong>${savedTodo.task}</strong> has been created.</p>
-               ${description ? `<p>Description: ${description}</p>` : ''}
-               ${dueDate ? `<p>Due Date: ${new Date(dueDate).toLocaleDateString()}</p>` : ''}`
-      } : null
-    }, req.user?.email).catch(err => {
+      }
+    }).catch(err => {
       console.error('Background notification error:', err);
     });
 
@@ -207,11 +171,11 @@ const toggleTodoStatus = async (req, res) => {
     
     const updatedTodo = await todo.save();
 
-    // Send notification in background - don't let it block the response
+    // Send notification in background - only for task completion
     if (updatedTodo.isCompleted && !wasCompleted) {
       const message = `Todo completed: "${updatedTodo.task}"`;
 
-      // Send comprehensive notification (async - don't await)
+      // Send notification (Socket.IO + Push only)
       sendNotification(updatedTodo.user, {
         todoId: updatedTodo._id,
         message,
@@ -222,13 +186,8 @@ const toggleTodoStatus = async (req, res) => {
           icon: '/favicon.ico',
           badge: '/favicon.ico',
           data: { todoId: updatedTodo._id, type: 'todo_completed' }
-        },
-        emailContent: req.user?.email ? {
-          subject: 'Todo Completed',
-          html: `<p>Congratulations! Your task <strong>${updatedTodo.task}</strong> has been completed.</p>
-                 <p>Completion Date: ${new Date().toLocaleDateString()}</p>`
-        } : null
-      }, req.user?.email).catch(err => {
+        }
+      }).catch(err => {
         console.error('Background notification error:', err);
       });
     }
@@ -278,7 +237,7 @@ const updateTodo = async (req, res) => {
       return res.status(404).json({ error: "Todo not found" });
     }
 
-    // Send notification in background
+    // Send notification in background (Socket.IO + Push only)
     const message = `Todo updated: "${updatedTodo.task}"`;
     sendNotification(updatedTodo.user, {
       todoId: updatedTodo._id,
@@ -320,7 +279,7 @@ const deleteTodo = async (req, res) => {
       return res.status(404).json({ error: "Todo not found" });
     }
 
-    // Send notification in background
+    // Send notification in background (Socket.IO + Push only)
     const message = `Todo deleted: "${deletedTodo.task}"`;
     sendNotification(deletedTodo.user, {
       todoId: deletedTodo._id,
