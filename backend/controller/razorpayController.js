@@ -148,55 +148,54 @@ const initiatePayment = async (req, res) => {
     const order = await instance.orders.create(options);
     if (!order) return res.status(500).send('Order creation failed.');
 
-    // Send payment initiation notifications
-    try {
-      const userProfile = await UserProfile.findOne({ uid: userId });
-      if (userProfile) {
-        const paymentInitiationEmailContent = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #333; text-align: center;">Payment Initiated 💳</h2>
-            <p>Hi ${userProfile.name || 'there'},</p>
-            <p>Your payment has been initiated successfully!</p>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="color: #495057; margin-top: 0;">Payment Details:</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li style="margin: 10px 0;"><strong>Order ID:</strong> ${order.id}</li>
-                <li style="margin: 10px 0;"><strong>Amount:</strong> ₹${(amount / 100).toFixed(2)}</li>
-                <li style="margin: 10px 0;"><strong>Plan:</strong> ${plan || 'Basic'}</li>
-                <li style="margin: 10px 0;"><strong>Status:</strong> Payment Initiated</li>
-              </ul>
+    // Send payment initiation notifications (without blocking the main flow)
+    setImmediate(async () => {
+      try {
+        const userProfile = await UserProfile.findOne({ uid: userId });
+        if (userProfile) {
+          const paymentInitiationEmailContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #333; text-align: center;">Payment Initiated 💳</h2>
+              <p>Hi ${userProfile.name || 'there'},</p>
+              <p>Your payment has been initiated successfully!</p>
+              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #495057; margin-top: 0;">Payment Details:</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li style="margin: 10px 0;"><strong>Order ID:</strong> ${order.id}</li>
+                  <li style="margin: 10px 0;"><strong>Amount:</strong> ₹${(amount / 100).toFixed(2)}</li>
+                  <li style="margin: 10px 0;"><strong>Plan:</strong> ${plan || 'Basic'}</li>
+                  <li style="margin: 10px 0;"><strong>Status:</strong> Payment Initiated</li>
+                </ul>
+              </div>
+              <p>Please complete the payment to activate your premium features.</p>
+              <p>If you encounter any issues during the payment process, please contact our support team.</p>
+              <p>Best regards,<br>The TodoApp Team</p>
             </div>
-            <p>Please complete the payment to activate your premium features.</p>
-            <p>If you encounter any issues during the payment process, please contact our support team.</p>
-            <p>Best regards,<br>The TodoApp Team</p>
-          </div>
-        `;
-        
-        const message = `Payment initiated for ${plan || 'Basic'} plan - ₹${(amount / 100).toFixed(2)}`;
-        
-        // Send complete notification (Socket.IO + Push + Email)
-        sendCompleteNotification(userId, {
-          message,
-          type: 'payment_initiated',
-          pushPayload: {
-            title: "Payment Initiated 💳",
-            body: message,
-            icon: '/favicon.ico',
-            badge: '/favicon.ico',
-            data: { orderId: order.id, type: 'payment_initiated' }
-          }
-        }, {
-          email: userProfile.email,
-          subject: 'TodoApp - Payment Initiated Successfully',
-          htmlContent: paymentInitiationEmailContent
-        }).catch(err => {
-          console.error('Background payment initiation notification error:', err);
-        });
+          `;
+          
+          const message = `Payment initiated for ${plan || 'Basic'} plan - ₹${(amount / 100).toFixed(2)}`;
+          
+          // Send complete notification (Socket.IO + Push + Email)
+          await sendCompleteNotification(userId, {
+            message,
+            type: 'payment_initiated',
+            pushPayload: {
+              title: "Payment Initiated 💳",
+              body: message,
+              icon: '/favicon.ico',
+              badge: '/favicon.ico',
+              data: { orderId: order.id, type: 'payment_initiated' }
+            }
+          }, {
+            email: userProfile.email,
+            subject: 'TodoApp - Payment Initiated Successfully',
+            htmlContent: paymentInitiationEmailContent
+          });
+        }
+      } catch (notificationError) {
+        console.error('Background payment initiation notification error:', notificationError);
       }
-    } catch (notificationError) {
-      console.error('Error sending payment initiation notifications:', notificationError);
-      // Don't fail the payment process if notifications fail
-    }
+    });
 
     res.status(200).json({ success: true, order });
   } catch (error) {
@@ -206,6 +205,8 @@ const initiatePayment = async (req, res) => {
 };
 
 const handleWebhook = async (req, res) => {
+  let webhookSignatureValid = false;
+  
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers['x-razorpay-signature'];
@@ -230,7 +231,7 @@ const handleWebhook = async (req, res) => {
     // Create expected signature using raw body
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
-      .update(req.body, 'utf8') // Ensure UTF-8 encoding
+      .update(req.body, 'utf8')
       .digest('hex');
 
     console.log('🔍 Expected signature:', expectedSignature);
@@ -246,6 +247,9 @@ const handleWebhook = async (req, res) => {
       console.warn('⚠️ Invalid webhook signature');
       return res.status(400).json({ message: 'Invalid signature' });
     }
+
+    webhookSignatureValid = true;
+    console.log('✅ Webhook signature validated successfully');
 
     // Parse the webhook data
     let data;
@@ -270,32 +274,92 @@ const handleWebhook = async (req, res) => {
       console.log('💵 Payment amount:', payment.amount);
       console.log('📝 Payment notes:', payment.notes);
     
-      if (userId) {
-        try {
-          console.log(`🔄 Attempting to update user with UID: ${userId}`);
-          
-          const updatedUser = await UserProfile.findOneAndUpdate(
-            { uid: userId },
-            { 
-              isPaid: true,
-              paymentId: payment.id,
-              paymentDate: new Date(),
-              plan: plan
-            },
-            { new: true }
-          );
-    
-          if (updatedUser) {
-            console.log(`✅ User with UID ${userId} is now marked as paid.`);
-            console.log('👤 Updated user:', {
-              id: updatedUser._id,
-              uid: updatedUser.uid,
-              email: updatedUser.email,
-              isPaid: updatedUser.isPaid,
-              plan: updatedUser.plan
-            });
+      if (!userId) {
+        console.warn('⚠️ No userId found in payment notes.');
+        console.warn('📝 Available notes:', payment.notes);
+        return res.status(200).json({ status: 'ok', message: 'No userId in payment notes' });
+      }
 
-            // Send payment success notifications
+      try {
+        console.log(`🔄 Attempting to update user with UID: ${userId}`);
+        
+        // First, let's check if the user exists
+        const existingUser = await UserProfile.findOne({ uid: userId });
+        console.log('🔍 User lookup result:', existingUser ? 'Found' : 'Not Found');
+        
+        if (!existingUser) {
+          console.error(`❌ No user found in DB with UID: ${userId}`);
+          
+          // Debug: Check what users exist
+          const userCount = await UserProfile.countDocuments();
+          console.log('📊 Total users in database:', userCount);
+          
+          if (userCount > 0) {
+            const sampleUsers = await UserProfile.find({}, { uid: 1, email: 1, name: 1 }).limit(5);
+            console.log('👥 Sample users (first 5):', sampleUsers);
+          }
+          
+          return res.status(200).json({ 
+            status: 'error', 
+            message: `User not found with UID: ${userId}` 
+          });
+        }
+
+        // Update the user to mark as paid - CRITICAL SECTION
+        const updatedUser = await UserProfile.findOneAndUpdate(
+          { uid: userId },
+          { 
+            isPaid: true,
+            paymentId: payment.id,
+            paymentDate: new Date(),
+            plan: plan,
+            $unset: { // Remove any temporary fields if they exist
+              paymentPending: 1
+            }
+          },
+          { 
+            new: true,
+            runValidators: true // Ensure schema validations run
+          }
+        );
+
+        if (!updatedUser) {
+          console.error(`❌ Failed to update user with UID: ${userId}`);
+          return res.status(200).json({ 
+            status: 'error', 
+            message: `Failed to update user payment status` 
+          });
+        }
+
+        console.log(`✅ User with UID ${userId} is now marked as paid.`);
+        console.log('👤 Updated user details:', {
+          id: updatedUser._id,
+          uid: updatedUser.uid,
+          email: updatedUser.email,
+          isPaid: updatedUser.isPaid,
+          plan: updatedUser.plan,
+          paymentId: updatedUser.paymentId,
+          paymentDate: updatedUser.paymentDate
+        });
+
+        // Verify the update was successful by fetching the user again
+        const verificationUser = await UserProfile.findOne({ uid: userId });
+        console.log('🔍 Verification - User isPaid status:', verificationUser?.isPaid);
+
+        if (!verificationUser?.isPaid) {
+          console.error('❌ CRITICAL: User update verification failed - isPaid is still false!');
+          
+          // Try a more direct update approach
+          const directUpdateResult = await UserProfile.updateOne(
+            { uid: userId },
+            { $set: { isPaid: true } }
+          );
+          console.log('🔄 Direct update result:', directUpdateResult);
+        }
+
+        // Send payment success notifications in background (non-blocking)
+        setImmediate(async () => {
+          try {
             if (updatedUser.email) {
               const paymentSuccessEmailContent = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -329,7 +393,7 @@ const handleWebhook = async (req, res) => {
               const message = `Payment successful! ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan activated - ₹${(payment.amount / 100).toFixed(2)}`;
               
               // Send complete notification (Socket.IO + Push + Email)
-              sendCompleteNotification(userId, {
+              await sendCompleteNotification(userId, {
                 message,
                 type: 'payment_success',
                 pushPayload: {
@@ -343,32 +407,25 @@ const handleWebhook = async (req, res) => {
                 email: updatedUser.email,
                 subject: 'TodoApp - Payment Successful! Premium Activated 🎉',
                 htmlContent: paymentSuccessEmailContent
-              }).catch(err => {
-                console.error('Background payment success notification error:', err);
               });
             }
-            
-          } else {
-            console.warn(`⚠️ No user found in DB with UID: ${userId}`);
-            
-            // Try to find user by different criteria for debugging
-            const userCheck = await UserProfile.findOne({ uid: userId });
-            console.log('🔍 User lookup result:', userCheck);
-            
-            if (!userCheck) {
-              console.log('🔍 Checking all users in DB...');
-              const allUsers = await UserProfile.find({}, { uid: 1, email: 1 });
-              console.log('👥 All users:', allUsers);
-            }
+          } catch (notificationError) {
+            console.error('Background payment success notification error:', notificationError);
           }
-        } catch (err) {
-          console.error('❌ Error updating user payment status:', err.message);
-          console.error('❌ Full error:', err);
-        }
-      } else {
-        console.warn('⚠️ No userId found in payment notes.');
-        console.warn('📝 Available notes:', payment.notes);
+        });
+        
+      } catch (updateError) {
+        console.error('❌ Critical error updating user payment status:', updateError.message);
+        console.error('❌ Full error stack:', updateError.stack);
+        
+        // Still return success to Razorpay to avoid retries, but log the error
+        return res.status(200).json({ 
+          status: 'error', 
+          message: 'Database update failed',
+          error: updateError.message 
+        });
       }
+      
     } else if (data.event === 'payment.failed') {
       console.log('❌ Payment failed event received');
       const payment = data.payload.payment.entity;
@@ -380,74 +437,83 @@ const handleWebhook = async (req, res) => {
         error: payment.error_description
       });
 
-      // Send payment failure notifications
+      // Send payment failure notifications in background (non-blocking)
       if (userId) {
-        try {
-          const userProfile = await UserProfile.findOne({ uid: userId });
-          if (userProfile && userProfile.email) {
-            const paymentFailureEmailContent = `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #dc3545; text-align: center;">Payment Failed ❌</h2>
-                <p>Hi ${userProfile.name || 'there'},</p>
-                <p>We're sorry, but your payment could not be processed successfully.</p>
-                <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545;">
-                  <h3 style="color: #721c24; margin-top: 0;">Payment Details:</h3>
-                  <ul style="list-style: none; padding: 0;">
-                    <li style="margin: 10px 0;"><strong>Payment ID:</strong> ${payment.id}</li>
-                    <li style="margin: 10px 0;"><strong>Amount:</strong> ₹${(payment.amount / 100).toFixed(2)}</li>
-                    <li style="margin: 10px 0;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">❌ Failed</span></li>
-                    ${payment.error_description ? `<li style="margin: 10px 0;"><strong>Error:</strong> ${payment.error_description}</li>` : ''}
-                  </ul>
+        setImmediate(async () => {
+          try {
+            const userProfile = await UserProfile.findOne({ uid: userId });
+            if (userProfile && userProfile.email) {
+              const paymentFailureEmailContent = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <h2 style="color: #dc3545; text-align: center;">Payment Failed ❌</h2>
+                  <p>Hi ${userProfile.name || 'there'},</p>
+                  <p>We're sorry, but your payment could not be processed successfully.</p>
+                  <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #dc3545;">
+                    <h3 style="color: #721c24; margin-top: 0;">Payment Details:</h3>
+                    <ul style="list-style: none; padding: 0;">
+                      <li style="margin: 10px 0;"><strong>Payment ID:</strong> ${payment.id}</li>
+                      <li style="margin: 10px 0;"><strong>Amount:</strong> ₹${(payment.amount / 100).toFixed(2)}</li>
+                      <li style="margin: 10px 0;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">❌ Failed</span></li>
+                      ${payment.error_description ? `<li style="margin: 10px 0;"><strong>Error:</strong> ${payment.error_description}</li>` : ''}
+                    </ul>
+                  </div>
+                  <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                    <h4 style="color: #495057; margin-top: 0;">What You Can Do:</h4>
+                    <ul>
+                      <li>Check your payment method details</li>
+                      <li>Ensure sufficient balance in your account</li>
+                      <li>Try again with a different payment method</li>
+                      <li>Contact your bank if the issue persists</li>
+                    </ul>
+                  </div>
+                  <p>You can try making the payment again from your TodoApp dashboard.</p>
+                  <p>If you continue to experience issues, please contact our support team for assistance.</p>
+                  <p>Best regards,<br>The TodoApp Team</p>
                 </div>
-                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                  <h4 style="color: #495057; margin-top: 0;">What You Can Do:</h4>
-                  <ul>
-                    <li>Check your payment method details</li>
-                    <li>Ensure sufficient balance in your account</li>
-                    <li>Try again with a different payment method</li>
-                    <li>Contact your bank if the issue persists</li>
-                  </ul>
-                </div>
-                <p>You can try making the payment again from your TodoApp dashboard.</p>
-                <p>If you continue to experience issues, please contact our support team for assistance.</p>
-                <p>Best regards,<br>The TodoApp Team</p>
-              </div>
-            `;
-            
-            const message = `Payment failed - ₹${(payment.amount / 100).toFixed(2)}. ${payment.error_description || 'Please try again.'}`;
-            
-            // Send complete notification (Socket.IO + Push + Email)
-            sendCompleteNotification(userId, {
-              message,
-              type: 'payment_failed',
-              pushPayload: {
-                title: "Payment Failed ❌",
-                body: message,
-                icon: '/favicon.ico',
-                badge: '/favicon.ico',
-                data: { paymentId: payment.id, type: 'payment_failed' }
-              }
-            }, {
-              email: userProfile.email,
-              subject: 'TodoApp - Payment Failed - Action Required',
-              htmlContent: paymentFailureEmailContent
-            }).catch(err => {
-              console.error('Background payment failure notification error:', err);
-            });
+              `;
+              
+              const message = `Payment failed - ₹${(payment.amount / 100).toFixed(2)}. ${payment.error_description || 'Please try again.'}`;
+              
+              // Send complete notification (Socket.IO + Push + Email)
+              await sendCompleteNotification(userId, {
+                message,
+                type: 'payment_failed',
+                pushPayload: {
+                  title: "Payment Failed ❌",
+                  body: message,
+                  icon: '/favicon.ico',
+                  badge: '/favicon.ico',
+                  data: { paymentId: payment.id, type: 'payment_failed' }
+                }
+              }, {
+                email: userProfile.email,
+                subject: 'TodoApp - Payment Failed - Action Required',
+                htmlContent: paymentFailureEmailContent
+              });
+            }
+          } catch (notificationError) {
+            console.error('Background payment failure notification error:', notificationError);
           }
-        } catch (notificationError) {
-          console.error('Error sending payment failure notifications:', notificationError);
-        }
+        });
       }
     } else {
       console.log(`ℹ️ Unhandled webhook event: ${data.event}`);
     }
 
+    // Always return success to Razorpay to prevent retries
     res.status(200).json({ status: 'ok' });
+    
   } catch (error) {
-    console.error('❌ Webhook error:', error);
+    console.error('❌ Critical webhook error:', error);
     console.error('❌ Error stack:', error.stack);
-    res.status(500).json({ message: 'Webhook handling failed', error: error.message });
+    console.error('❌ Webhook signature valid:', webhookSignatureValid);
+    
+    // Even on error, return 200 to prevent Razorpay retries if signature was valid
+    if (webhookSignatureValid) {
+      res.status(200).json({ status: 'error', message: 'Webhook processing failed but signature was valid' });
+    } else {
+      res.status(500).json({ message: 'Webhook handling failed', error: error.message });
+    }
   }
 };
 
