@@ -21,17 +21,19 @@ const initializeSocket = (server) => {
     maxHttpBufferSize: 1e6,
     connectTimeout: 60000,
     serveClient: false,
-    // Fix: Ensure proper namespace
     path: "/socket.io/",
   });
 
-  // Handle connection - ADD ERROR HANDLING
+  // Store user sessions for project tracking
+  const userSessions = new Map(); // socketId -> { userId, projectId, userInfo }
+  const projectUsers = new Map(); // projectId -> Set of user objects
+
+  // Handle connection
   io.on("connection", (socket) => {
     console.log("✅ User connected:", socket.id);
     console.log("   - Transport:", socket.conn.transport.name);
-    console.log("   - Headers:", socket.request.headers);
 
-    // Handle user joining their room - ADD VALIDATION
+    // Handle user joining their personal room (for notifications)
     socket.on("join", (userId) => {
       console.log("📡 Join event received for userId:", userId);
 
@@ -43,9 +45,8 @@ const initializeSocket = (server) => {
 
       try {
         socket.join(userId);
-        console.log(`✅ User ${userId} joined room: ${userId}`);
+        console.log(`✅ User ${userId} joined personal room: ${userId}`);
 
-        // Confirm the join with room info
         const room = io.sockets.adapter.rooms.get(userId);
         socket.emit("joined", {
           userId,
@@ -54,19 +55,148 @@ const initializeSocket = (server) => {
         });
 
         console.log(
-          `📊 Room ${userId} now has ${room ? room.size : 0} clients`
+          `📊 Personal room ${userId} now has ${room ? room.size : 0} clients`
         );
       } catch (error) {
-        console.error("❌ Error joining room:", error);
+        console.error("❌ Error joining personal room:", error);
         socket.emit("error", { message: "Failed to join room" });
       }
     });
 
-    // Handle user leaving their room
+    // NEW: Handle joining project room for collaboration
+    socket.on("joinProject", async (data) => {
+      const { projectId, userId, userInfo } = data;
+      
+      console.log("🏢 Project join request:", { projectId, userId, userInfo });
+
+      if (!projectId || !userId) {
+        socket.emit("projectError", { message: "ProjectId and userId are required" });
+        return;
+      }
+
+      try {
+        // Leave any previous project room
+        const previousSession = userSessions.get(socket.id);
+        if (previousSession && previousSession.projectId) {
+          await handleLeaveProject(socket, previousSession);
+        }
+
+        // Join new project room
+        socket.join(`project:${projectId}`);
+        
+        // Store user session
+        const sessionData = {
+          userId,
+          projectId,
+          userInfo: userInfo || { username: "Anonymous User", role: "viewer" }
+        };
+        userSessions.set(socket.id, sessionData);
+
+        // Update project users tracking
+        if (!projectUsers.has(projectId)) {
+          projectUsers.set(projectId, new Set());
+        }
+        
+        const projectUserSet = projectUsers.get(projectId);
+        // Remove any existing entry for this user (prevent duplicates)
+        projectUserSet.forEach(user => {
+          if (user.userId === userId) {
+            projectUserSet.delete(user);
+          }
+        });
+        // Add current user
+        projectUserSet.add({
+          userId,
+          socketId: socket.id,
+          ...sessionData.userInfo,
+          joinedAt: new Date()
+        });
+
+        console.log(`✅ User ${userId} joined project room: project:${projectId}`);
+
+        // Confirm join to the user
+        socket.emit("projectJoined", {
+          projectId,
+          userId,
+          activeUsers: Array.from(projectUserSet)
+        });
+
+        // Broadcast to other users in the project
+        socket.to(`project:${projectId}`).emit("userJoinedProject", {
+          projectId,
+          user: {
+            userId,
+            socketId: socket.id,
+            ...sessionData.userInfo,
+            joinedAt: new Date()
+          },
+          activeUsers: Array.from(projectUserSet)
+        });
+
+        const room = io.sockets.adapter.rooms.get(`project:${projectId}`);
+        console.log(`📊 Project room ${projectId} now has ${room ? room.size : 0} clients`);
+
+      } catch (error) {
+        console.error("❌ Error joining project room:", error);
+        socket.emit("projectError", { message: "Failed to join project room" });
+      }
+    });
+
+    // NEW: Handle leaving project room
+    socket.on("leaveProject", async (data) => {
+      const { projectId, userId } = data;
+      const session = userSessions.get(socket.id);
+      
+      if (session) {
+        await handleLeaveProject(socket, session);
+      }
+    });
+
+    // Helper function to handle leaving project
+    async function handleLeaveProject(socket, session) {
+      const { projectId, userId } = session;
+      
+      try {
+        socket.leave(`project:${projectId}`);
+        
+        // Remove from project users tracking
+        const projectUserSet = projectUsers.get(projectId);
+        if (projectUserSet) {
+          projectUserSet.forEach(user => {
+            if (user.socketId === socket.id) {
+              projectUserSet.delete(user);
+            }
+          });
+          
+          // Clean up empty project rooms
+          if (projectUserSet.size === 0) {
+            projectUsers.delete(projectId);
+          }
+        }
+
+        // Remove user session
+        userSessions.delete(socket.id);
+
+        console.log(`✅ User ${userId} left project room: project:${projectId}`);
+
+        // Broadcast to remaining users
+        socket.to(`project:${projectId}`).emit("userLeftProject", {
+          projectId,
+          userId,
+          socketId: socket.id,
+          activeUsers: projectUserSet ? Array.from(projectUserSet) : []
+        });
+
+      } catch (error) {
+        console.error("❌ Error leaving project room:", error);
+      }
+    }
+
+    // Handle user leaving their personal room
     socket.on("leave", (userId) => {
       if (userId && typeof userId === "string") {
         socket.leave(userId);
-        console.log(`✅ User ${userId} left room: ${userId}`);
+        console.log(`✅ User ${userId} left personal room: ${userId}`);
       } else {
         console.warn("❌ Invalid userId provided for leave:", userId);
       }
@@ -75,6 +205,12 @@ const initializeSocket = (server) => {
     // Handle disconnect
     socket.on("disconnect", (reason) => {
       console.log("❌ User disconnected:", socket.id, "Reason:", reason);
+      
+      // Handle project room cleanup on disconnect
+      const session = userSessions.get(socket.id);
+      if (session) {
+        handleLeaveProject(socket, session);
+      }
     });
 
     // Handle errors
@@ -95,6 +231,7 @@ const initializeSocket = (server) => {
 
   return io;
 };
+
 const getIo = () => {
   if (!io) {
     throw new Error("Socket.io not initialized!");
@@ -102,7 +239,7 @@ const getIo = () => {
   return io;
 };
 
-// Send notification to specific user
+// Existing notification functions (keep as is)
 const sendNotificationToUser = (userId, notificationData) => {
   if (!io) {
     console.error("❌ Socket.io not initialized");
@@ -123,7 +260,6 @@ const sendNotificationToUser = (userId, notificationData) => {
     console.log(`📡 Attempting to send notification to user ${userId}`);
     console.log("📄 Notification data:", notificationData);
 
-    // Check if room exists and has clients
     const room = io.sockets.adapter.rooms.get(userId);
     if (!room || room.size === 0) {
       console.log(
@@ -134,7 +270,6 @@ const sendNotificationToUser = (userId, notificationData) => {
 
     console.log(`📊 Room ${userId} has ${room.size} connected clients`);
 
-    // Send to specific user room
     io.to(userId).emit("newNotification", notificationData);
     console.log(
       `✅ Notification sent to user ${userId}:`,
@@ -148,7 +283,79 @@ const sendNotificationToUser = (userId, notificationData) => {
   }
 };
 
-// Send notification to all connected users (optional utility function)
+// NEW: Project collaboration event emitters
+const emitToProject = (projectId, eventName, data) => {
+  if (!io) {
+    console.error("❌ Socket.io not initialized");
+    return false;
+  }
+
+  if (!projectId) {
+    console.error("❌ No projectId provided");
+    return false;
+  }
+
+  try {
+    const room = io.sockets.adapter.rooms.get(`project:${projectId}`);
+    if (!room || room.size === 0) {
+      console.log(`⚠️ No clients in project room ${projectId}`);
+      return false;
+    }
+
+    console.log(`📡 Emitting ${eventName} to project ${projectId} (${room.size} clients)`);
+    io.to(`project:${projectId}`).emit(eventName, data);
+    return true;
+  } catch (error) {
+    console.error(`❌ Error emitting ${eventName} to project:`, error);
+    return false;
+  }
+};
+
+// NEW: Specific project event functions
+const emitTodoCreated = (projectId, todoData) => {
+  return emitToProject(projectId, "todoCreated", {
+    projectId,
+    todo: todoData,
+    timestamp: new Date()
+  });
+};
+
+const emitTodoUpdated = (projectId, todoData) => {
+  return emitToProject(projectId, "todoUpdated", {
+    projectId,
+    todo: todoData,
+    timestamp: new Date()
+  });
+};
+
+const emitTodoDeleted = (projectId, todoId) => {
+  return emitToProject(projectId, "todoDeleted", {
+    projectId,
+    todoId,
+    timestamp: new Date()
+  });
+};
+
+const emitTodoToggled = (projectId, todoId, isCompleted) => {
+  return emitToProject(projectId, "todoToggled", {
+    projectId,
+    todoId,
+    isCompleted,
+    timestamp: new Date()
+  });
+};
+
+// NEW: Get active users in project
+const getProjectActiveUsers = (projectId) => {
+  if (!io) {
+    return [];
+  }
+
+  const projectUserSet = projectUsers.get(projectId);
+  return projectUserSet ? Array.from(projectUserSet) : [];
+};
+
+// Existing utility functions (keep as is)
 const sendNotificationToAll = (notificationData) => {
   if (!io) {
     console.error("❌ Socket.io not initialized");
@@ -163,7 +370,6 @@ const sendNotificationToAll = (notificationData) => {
   }
 };
 
-// Get connected users count
 const getConnectedUsersCount = () => {
   if (!io) {
     return 0;
@@ -171,7 +377,6 @@ const getConnectedUsersCount = () => {
   return io.engine.clientsCount;
 };
 
-// Get users in a specific room
 const getUsersInRoom = (roomId) => {
   if (!io) {
     return [];
@@ -188,4 +393,11 @@ module.exports = {
   sendNotificationToAll,
   getConnectedUsersCount,
   getUsersInRoom,
+  // NEW exports for project collaboration
+  emitToProject,
+  emitTodoCreated,
+  emitTodoUpdated,
+  emitTodoDeleted,
+  emitTodoToggled,
+  getProjectActiveUsers,
 };

@@ -23,6 +23,7 @@ const TodoList = () => {
   const [editingTodo, setEditingTodo] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false); // NEW: Form visibility state
 
   // Fetch tasks from API
   const fetchTasks = useCallback(async () => {
@@ -71,6 +72,7 @@ const TodoList = () => {
           )
         );
         setEditingTodo(null);
+        setShowForm(false); // Hide form after edit
       } else {
         // Create new todo
         const response = await API.post('/todos/create', {
@@ -80,20 +82,29 @@ const TodoList = () => {
         
         // Add new todo to local state
         setTasks(prevTasks => [...prevTasks, response.data]);
+        setShowForm(false); // Hide form after create
       }
     } catch (error) {
       console.error("Error saving todo:", error);
     }
   };
 
-  // Handle cancel editing
+  // Handle cancel editing/creating
   const handleCancelEdit = useCallback(() => {
     setEditingTodo(null);
+    setShowForm(false); // Hide form on cancel
   }, []);
 
   // Handle edit button click
   const handleEditClick = useCallback((task) => {
     setEditingTodo(task);
+    setShowForm(true); // Show form for editing
+  }, []);
+
+  // Handle add new todo button click
+  const handleAddClick = useCallback(() => {
+    setEditingTodo(null);
+    setShowForm(true);
   }, []);
 
   // Handle task deletion
@@ -188,19 +199,37 @@ const TodoList = () => {
         {/* Progress Bar */}
         <ProgressBar totalTasks={totalTasks} completedTasks={completedTasks} />
         
-        {/* Search Input */}
-        <SearchInput 
-          searchTerm={searchTerm} 
-          onSearchChange={handleSearchChange} 
-        />
+        {/* Action Bar - Search and Add Button */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
+          {/* Search Input - takes up available space */}
+          <div className="flex-1">
+            <SearchInput 
+              searchTerm={searchTerm} 
+              onSearchChange={handleSearchChange} 
+            />
+          </div>
+          
+          {/* Add Todo Button */}
+          <button
+            onClick={handleAddClick}
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 min-w-fit"
+          >
+            <span className="text-lg">➕</span>
+            <span>Add New Task</span>
+          </button>
+        </div>
 
-        {/* Todo Form */}
-        <TodoForm 
-          editingTodo={editingTodo}
-          onSubmit={handleFormSubmit}
-          onCancel={handleCancelEdit}
-          currentUser={currentUser}
-        />
+        {/* Todo Form - Only show when needed */}
+        {showForm && (
+          <div className="mb-6">
+            <TodoForm 
+              editingTodo={editingTodo}
+              onSubmit={handleFormSubmit}
+              onCancel={handleCancelEdit}
+              currentUser={currentUser}
+            />
+          </div>
+        )}
 
         {/* Filters */}
         <TodoFilters 

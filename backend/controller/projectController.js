@@ -2,6 +2,15 @@ const Project = require("../models/projectModel");
 const Todo = require("../models/todo"); // Your existing Todo model
 const User = require("../models/userProfileModel"); // Assuming you have a User model
 
+
+const { 
+  emitTodoCreated, 
+  emitTodoUpdated, 
+  emitTodoDeleted, 
+  emitTodoToggled 
+} = require("../socket");
+
+
 // Create a new project
 const createProject = async (req, res) => {
   try {
@@ -195,6 +204,10 @@ const addTodoToProject = async (req, res) => {
     await project.save();
     await project.updateStats();
 
+    // NEW: Emit socket event for real-time collaboration
+    const todoData = await Todo.findById(todoId);
+    emitTodoCreated(projectId, todoData);
+
     res.status(200).json({
       success: true,
       message: "Todo added to project successfully",
@@ -206,10 +219,12 @@ const addTodoToProject = async (req, res) => {
       message: "Error adding todo to project",
       error: error.message,
     });
-  }
+  };
 };
 
-// Remove todo from project
+
+// MODIFY: Add socket emission to removeTodoFromProject function
+// Replace the existing removeTodoFromProject function with this updated version
 const removeTodoFromProject = async (req, res) => {
   try {
     const { projectId, todoId } = req.params;
@@ -234,11 +249,15 @@ const removeTodoFromProject = async (req, res) => {
     project.todos = project.todos.filter((id) => id.toString() !== todoId);
     await project.save();
     await project.updateStats();
+    
     const todo = await Todo.findById(todoId);
     if (todo) {
       todo.project = null;
       await todo.save();
     }
+
+    // NEW: Emit socket event for real-time collaboration
+    emitTodoDeleted(projectId, todoId);
 
     res.status(200).json({
       success: true,
@@ -495,6 +514,190 @@ const deleteProject = async (req, res) => {
   }
 };
 
+// NEW: Create todo directly in project (add this new function)
+const createTodoInProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { task, description, priority, dueDate } = req.body;
+    const userId = req.user._id;
+
+    // Check project access and permissions
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const userRole = project.getUserRole(userId);
+    if (!userRole || userRole === "viewer") {
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions to create todos in this project",
+      });
+    }
+
+    if (!task || !task.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Task content is required",
+      });
+    }
+
+    // Create the todo
+    const newTodo = new Todo({
+      task: task.trim(),
+      description: description || "",
+      priority: priority || "medium",
+      dueDate: dueDate || null,
+      user: userId,
+      project: projectId,
+      list: "general", // or get from request
+      isCompleted: false,
+    });
+
+    const savedTodo = await newTodo.save();
+
+    // Add to project
+    project.todos.push(savedTodo._id);
+    await project.save();
+    await project.updateStats();
+
+    // Populate the todo data for socket emission
+    const populatedTodo = await Todo.findById(savedTodo._id);
+
+    // NEW: Emit socket event for real-time collaboration
+    emitTodoCreated(projectId, populatedTodo);
+
+    res.status(201).json({
+      success: true,
+      message: "Todo created successfully",
+      data: populatedTodo,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error creating todo in project",
+      error: error.message,
+    });
+  }
+};
+
+// NEW: Update todo in project (add this new function)
+const updateTodoInProject = async (req, res) => {
+  try {
+    const { projectId, todoId } = req.params;
+    const { task, description, priority, dueDate } = req.body;
+    const userId = req.user._id;
+
+    // Check project access and permissions
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const userRole = project.getUserRole(userId);
+    if (!userRole || userRole === "viewer") {
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions to update todos in this project",
+      });
+    }
+
+    // Find and update the todo
+    const todo = await Todo.findById(todoId);
+    if (!todo || !project.todos.includes(todoId)) {
+      return res.status(404).json({
+        success: false,
+        message: "Todo not found in this project",
+      });
+    }
+
+    // Update fields if provided
+    if (task !== undefined) todo.task = task.trim();
+    if (description !== undefined) todo.description = description;
+    if (priority !== undefined) todo.priority = priority;
+    if (dueDate !== undefined) todo.dueDate = dueDate;
+
+    const updatedTodo = await todo.save();
+
+    // NEW: Emit socket event for real-time collaboration
+    emitTodoUpdated(projectId, updatedTodo);
+
+    res.status(200).json({
+      success: true,
+      message: "Todo updated successfully",
+      data: updatedTodo,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error updating todo in project",
+      error: error.message,
+    });
+  }
+};
+
+// NEW: Toggle todo completion in project (add this new function)
+const toggleTodoInProject = async (req, res) => {
+  try {
+    const { projectId, todoId } = req.params;
+    const { isCompleted } = req.body;
+    const userId = req.user._id;
+
+    // Check project access and permissions
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    const userRole = project.getUserRole(userId);
+    if (!userRole || userRole === "viewer") {
+      return res.status(403).json({
+        success: false,
+        message: "Insufficient permissions to toggle todos in this project",
+      });
+    }
+
+    // Find and toggle the todo
+    const todo = await Todo.findById(todoId);
+    if (!todo || !project.todos.includes(todoId)) {
+      return res.status(404).json({
+        success: false,
+        message: "Todo not found in this project",
+      });
+    }
+
+    todo.isCompleted = isCompleted !== undefined ? isCompleted : !todo.isCompleted;
+    const updatedTodo = await todo.save();
+
+    // Update project stats
+    await project.updateStats();
+
+    // NEW: Emit socket event for real-time collaboration
+    emitTodoToggled(projectId, todoId, todo.isCompleted);
+
+    res.status(200).json({
+      success: true,
+      message: "Todo status updated successfully",
+      data: updatedTodo,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error toggling todo in project",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createProject,
   getProjectsByUser,
@@ -506,4 +709,8 @@ module.exports = {
   getPendingInvitations,
   updateProject,
   deleteProject,
-};
+  createTodoInProject,
+  updateTodoInProject,
+  toggleTodoInProject
+}
+

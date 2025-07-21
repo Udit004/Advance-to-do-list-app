@@ -136,7 +136,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
     }
   };
 
-  const resetForm = () => {
+  const handleCancel = () => {
     setFormData({
       task: "",
       description: "",
@@ -149,19 +149,21 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
   };
 
   return (
-    <div className="mb-8 p-6 bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700/50">
+    <div className="p-6 bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700/50 shadow-2xl">
+      {/* Header with Close Button */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-semibold text-white flex items-center gap-3">
-          {editingTodo ? "✏️ Edit Task" : "➕ Add New Task"}
+          {editingTodo ? "✏️ Edit Task" : "➕ Create New Task"}
         </h2>
-        {editingTodo && (
-          <button
-            onClick={resetForm}
-            className="px-4 py-2 bg-slate-600/50 text-slate-300 rounded-lg hover:bg-slate-600/70 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          onClick={handleCancel}
+          className="p-2 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+          aria-label="Close form"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -176,7 +178,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
               onChange={handleChange}
               placeholder="What needs to be done?"
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 focus:border-purple-400 focus:outline-none transition-colors"
             />
           </div>
           
@@ -190,7 +192,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
               value={formData.dueDate}
               onChange={handleChange}
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:border-purple-400 focus:outline-none transition-colors"
             />
           </div>
         </div>
@@ -206,7 +208,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
             required
             rows="3"
             placeholder="Add more details..."
-            className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white resize-none"
+            className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-400 resize-none focus:border-purple-400 focus:outline-none transition-colors"
           />
         </div>
 
@@ -226,7 +228,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
               name="priority"
               value={formData.priority}
               onChange={handleChange}
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:border-purple-400 focus:outline-none transition-colors"
             >
               {!editingTodo && <option value="">🤖 Use AI Prediction</option>}
               {editingTodo && <option value="">Select Priority</option>}
@@ -245,7 +247,7 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
               value={formData.list}
               onChange={handleChange}
               required
-              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white"
+              className="w-full p-4 bg-slate-700/50 border border-slate-600/50 rounded-xl text-white focus:border-purple-400 focus:outline-none transition-colors"
             >
               <option value="" disabled>Select category</option>
               <option value="general">📝 General</option>
@@ -257,20 +259,30 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-xl"
-        >
-          {isSubmitting ? (
-            <div className="flex items-center justify-center gap-2">
-              <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
-              {editingTodo ? "Updating..." : "Creating..."}
-            </div>
-          ) : (
-            editingTodo ? "Update Task" : "Create Task"
-          )}
-        </button>
+        {/* Action Buttons */}
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="flex-1 py-4 bg-slate-600/50 hover:bg-slate-600/70 text-slate-300 font-semibold rounded-xl transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex-1 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                {editingTodo ? "Updating..." : "Creating..."}
+              </div>
+            ) : (
+              editingTodo ? "Update Task" : "Create Task"
+            )}
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -11,7 +11,10 @@ const {
   respondToInvitation,
   getPendingInvitations,
   updateProject,
-  deleteProject
+  deleteProject,
+  createTodoInProject, 
+  updateTodoInProject, 
+  toggleTodoInProject
 } = require('../controller/projectController');
 
 const authenticateUser = require('../middleware/authMiddleware');
@@ -24,6 +27,12 @@ router.use((req, res, next) => {
   }
   return authenticateUser(req, res, next);
 });
+
+router.post("/:projectId/todos/create", authenticateUser, createTodoInProject);
+router.put("/:projectId/todos/:todoId", authenticateUser, updateTodoInProject);
+router.patch("/:projectId/todos/:todoId/toggle", authenticateUser, toggleTodoInProject);
+
+
 
 // Project CRUD routes
 router.post('/create', createProject);

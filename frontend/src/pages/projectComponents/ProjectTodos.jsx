@@ -2,47 +2,41 @@ import { toast } from "react-hot-toast";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ArrowLeft,
-  Target,
-  Star,
-  Plus,
-  Circle,
-  CheckCircle,
-  Flag,
-  Calendar,
-  Edit3,
-  Trash2,
-} from "lucide-react";
+import useSocket from "../../hooks/useSocket";
+import { ArrowLeft, Target, Star, Plus, X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import API from "../../api/config";
+
+// Import modular components from TodoList
+import LoadingSpinner from "../todoComponents/LoadingSpinner";
+import EmptyState from "../todoComponents/EmptyState";
+import SearchInput from "../todoComponents/SearchInput";
+import ProgressBar from "../todoComponents/ProgressBar";
+import TodoFilters from "../todoComponents/TodoFilters";
+import TodoForm from "../todoComponents/TodoForm";
+import TodoItem from "../todoComponents/TodoItem";
 
 const ProjectTodos = () => {
   const { projectId } = useParams();
   const { currentUser } = useAuth();
+  const socket = useSocket(currentUser?.uid);
   const navigate = useNavigate();
 
   const [project, setProject] = useState(null);
   const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editTodoId, setEditTodoId] = useState(null);
+  const [editingTodo, setEditingTodo] = useState(null);
+  
+  // New state for form visibility
+  const [showForm, setShowForm] = useState(false);
 
-  // Memoize form states to prevent unnecessary re-renders
-  const [newTodo, setNewTodo] = useState({
-    task: "",
-    description: "",
-    priority: "medium",
-    dueDate: "",
-  });
+  // Filter and search states (matching TodoList)
+  const [filter, setFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const [editTodoData, setEditTodoData] = useState({
-    task: "",
-    description: "",
-    priority: "medium",
-    dueDate: "",
-  });
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   // Memoize calculated values
   const completionPercentage = useMemo(() => {
@@ -56,6 +50,52 @@ const ProjectTodos = () => {
       project && (project.userRole === "owner" || project.userRole === "editor")
     );
   }, [project]);
+
+  // Filter todos based on search term and filter (matching TodoList logic)
+  const filteredTodos = useMemo(() => {
+    return todos.filter(task => {
+      const term = searchTerm.toLowerCase();
+      
+      // Filter by completion status
+      const matchFilter =
+        filter === "completed"
+          ? task.isCompleted
+          : filter === "pending"
+          ? !task.isCompleted
+          : true;
+      
+      // Filter by search term
+      const matchSearch =
+        (task.task && task.task.toLowerCase().includes(term)) ||
+        (task.description && task.description.toLowerCase().includes(term)) ||
+        (task.list && task.list.toLowerCase().includes(term));
+
+      return matchFilter && matchSearch;
+    });
+  }, [todos, searchTerm, filter]);
+
+  // Computed values for components
+  const totalTasks = todos.length;
+  const completedTasks = todos.filter(task => task.isCompleted).length;
+
+  // Toggle form visibility
+  const toggleForm = useCallback(() => {
+    setShowForm(prev => !prev);
+    // Reset editing state when hiding form
+    if (showForm) {
+      setEditingTodo(null);
+    }
+  }, [showForm]);
+
+  // Handle new task button click
+  const handleNewTaskClick = useCallback(() => {
+    if (!canEdit) {
+      toast.error("You don't have permission to create tasks in this project");
+      return;
+    }
+    setEditingTodo(null); // Ensure we're in create mode
+    setShowForm(true);
+  }, [canEdit]);
 
   // Optimize fetchProjectData with useCallback to prevent unnecessary re-renders
   const fetchProjectData = useCallback(async () => {
@@ -79,795 +119,408 @@ const ProjectTodos = () => {
     fetchProjectData();
   }, [fetchProjectData]);
 
-  // Define cancelEditTodo before using it in other functions
-  const cancelEditTodo = useCallback(() => {
-    setEditTodoId(null);
-    setEditTodoData({
-      task: "",
-      description: "",
-      priority: "medium",
-      dueDate: "",
+  useEffect(() => {
+    if (!socket.isConnected || !project || !currentUser?.uid) return;
+  
+    console.log("🔧 Setting up project socket listeners for:", projectId);
+    
+    // Join project room
+    socket.emit("joinProject", {
+      projectId,
+      userId: currentUser.uid,
+      userInfo: {
+        username: currentUser.displayName || currentUser.email || "Anonymous",
+        email: currentUser.email,
+        role: project.userRole || "viewer"
+      }
     });
+  
+    // Listen for successful project join
+    socket.on("projectJoined", (data) => {
+      console.log("✅ Successfully joined project room:", data);
+      setActiveUsers(data.activeUsers || []);
+      setSocketConnected(true);
+    });
+  
+    // Listen for other users joining
+    socket.on("userJoinedProject", (data) => {
+      console.log("👋 User joined project:", data.user);
+      setActiveUsers(data.activeUsers || []);
+    });
+  
+    // Listen for users leaving
+    socket.on("userLeftProject", (data) => {
+      console.log("👋 User left project:", data.userId);
+      setActiveUsers(data.activeUsers || []);
+    });
+  
+    // Listen for real-time todo events
+    socket.on("todoCreated", (data) => {
+      console.log("🆕 Todo created via socket:", data.todo);
+      if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
+        setTodos((prev) => {
+          // Check if todo already exists to prevent duplicates
+          const exists = prev.find((todo) => todo._id === data.todo._id);
+          if (!exists) {
+            return [data.todo, ...prev];
+          }
+          return prev;
+        });
+        toast.success(`New task added by ${data.todo.createdBy || 'another user'}`, {
+          icon: "✨",
+          duration: 3000,
+        });
+      }
+    });
+  
+    socket.on("todoUpdated", (data) => {
+      console.log("📝 Todo updated via socket:", data.todo);
+      if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
+        setTodos((prev) =>
+          prev.map((todo) =>
+            todo._id === data.todo._id ? { ...todo, ...data.todo } : todo
+          )
+        );
+        toast.success("Task updated by another user", {
+          icon: "🔄",
+          duration: 2000,
+        });
+      }
+    });
+  
+    socket.on("todoDeleted", (data) => {
+      console.log("🗑️ Todo deleted via socket:", data.todoId);
+      if (data.projectId === projectId) {
+        setTodos((prev) => prev.filter((todo) => todo._id !== data.todoId));
+        toast.success("Task removed by another user", {
+          icon: "🗑️",
+          duration: 2000,
+        });
+      }
+    });
+  
+    socket.on("todoToggled", (data) => {
+      console.log("✅ Todo toggled via socket:", data);
+      if (data.projectId === projectId) {
+        setTodos((prev) =>
+          prev.map((todo) =>
+            todo._id === data.todoId
+              ? { ...todo, isCompleted: data.isCompleted }
+              : todo
+          )
+        );
+        toast.success(
+          data.isCompleted
+            ? "Task completed by another user"
+            : "Task reopened by another user",
+          {
+            icon: data.isCompleted ? "✅" : "⏳",
+            duration: 2000,
+          }
+        );
+      }
+    });
+  
+    // Listen for project errors
+    socket.on("projectError", (error) => {
+      console.error("❌ Project socket error:", error);
+      toast.error(error.message || "Connection error");
+    });
+  
+    // Cleanup function
+    return () => {
+      console.log("🧹 Cleaning up project socket listeners");
+      socket.off("projectJoined");
+      socket.off("userJoinedProject");  
+      socket.off("userLeftProject");
+      socket.off("todoCreated");
+      socket.off("todoUpdated");
+      socket.off("todoDeleted");
+      socket.off("todoToggled");
+      socket.off("projectError");
+  
+      // Leave project room
+      if (socket.isConnected) {
+        socket.emit("leaveProject", {
+          projectId,
+          userId: currentUser.uid
+        });
+      }
+    };
+  }, [socket.isConnected, project, projectId, currentUser?.uid]);
+
+  // Handle form submission for create/update (modified for project-specific API)
+  const handleFormSubmit = useCallback(async (taskData, originalTodo) => {
+    if (!currentUser?.uid) {
+      console.error("User not authenticated");
+      return;
+    }
+
+    // Check permissions
+    if (!canEdit) {
+      toast.error("You don't have permission to modify tasks in this project");
+      return;
+    }
+
+    try {
+      if (originalTodo) {
+        // Update existing todo
+        const response = await API.put(`/todos/update/${originalTodo._id}`, {
+          ...taskData,
+          user: currentUser.uid
+        });
+        
+        // Update local state
+        setTodos(prevTodos =>
+          prevTodos.map(task =>
+            task._id === originalTodo._id ? response.data : task
+          )
+        );
+        setEditingTodo(null);
+        setShowForm(false); // Hide form after successful update
+        toast.success("Task updated successfully!");
+      } else {
+        // Create new todo using project-specific endpoint
+        const response = await API.post(`/projects/${projectId}/todos/create`, {
+          ...taskData,
+          user: currentUser.uid
+        });
+        
+        // Add new todo to local state
+        const createdTodo = response.data.data;
+        setTodos(prevTodos => [createdTodo, ...prevTodos]);
+        setShowForm(false); // Hide form after successful creation
+        toast.success("Task created successfully!");
+      }
+    } catch (error) {
+      console.error("Error saving todo:", error);
+      toast.error("Failed to save task. Please try again.");
+    }
+  }, [currentUser?.uid, canEdit, projectId]);
+
+  // Handle cancel editing
+  const handleCancelEdit = useCallback(() => {
+    setEditingTodo(null);
+    setShowForm(false);
   }, []);
 
-  // Optimize todo creation with better error handling
-  const handleCreateTodo = useCallback(
-    async (e) => {
-      e.preventDefault();
-      if (!newTodo.task.trim() || creating) return;
+  // Handle edit button click
+  const handleEditClick = useCallback((task) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to edit tasks in this project");
+      return;
+    }
+    setEditingTodo(task);
+    setShowForm(true);
+  }, [canEdit]);
 
-      setCreating(true);
-      const loadingToast = toast.loading("Creating task...");
+  // Handle task deletion (modified for project-specific API)
+  const handleDelete = useCallback(async (id) => {
+    if (!canEdit) {
+      toast.error("You don't have permission to delete tasks in this project");
+      return;
+    }
 
-      try {
-        const todoPayload = {
-          task: newTodo.task,
-          description: newTodo.description,
-          priority: newTodo.priority,
-          dueDate: newTodo.dueDate,
-          user: currentUser.uid,
-          list: "general",
-        };
-
-        const todoResponse = await API.post("/todos/create", todoPayload);
-        const createdTodo = todoResponse.data;
-
-        if (!createdTodo._id && !createdTodo.id) {
-          throw new Error("No todo ID returned from server");
-        }
-
-        const todoId = createdTodo._id || createdTodo.id;
-        const newTodoItem = {
-          ...createdTodo,
-          _id: todoId,
-        };
-
-        // Optimistically update UI
-        setTodos((prev) => [...prev, newTodoItem]);
-
-        // Reset form
-        setNewTodo({
-          task: "",
-          description: "",
-          priority: "medium",
-          dueDate: "",
-        });
-        setShowCreateForm(false);
-
-        toast.success("Task created successfully!", { id: loadingToast });
-
-        // Add to project (can fail silently)
-        try {
-          await API.post(`/projects/${projectId}/todos`, { todoId });
-        } catch (projectError) {
-          console.error("Error adding todo to project:", projectError);
-        }
-      } catch (error) {
-        console.error("Error creating todo:", error);
-        toast.error("Failed to create task. Please try again.", {
-          id: loadingToast,
-        });
-      } finally {
-        setCreating(false);
-      }
-    },
-    [newTodo, creating, currentUser.uid, projectId]
-  );
-
-const handleToggleTodo = useCallback(
-  async (todoId) => {
     try {
-      const todo = todos.find((t) => t._id === todoId);
-      if (!todo) return;
-
-      const newStatus = !todo.isCompleted;
-
+      const todoToDelete = todos.find((t) => t._id === id);
+      
       // Optimistically update UI
-      setTodos((prev) =>
-        prev.map((todo) =>
-          todo._id === todoId ? { ...todo, isCompleted: newStatus } : todo
+      setTodos(prevTasks => prevTasks.filter(task => task._id !== id));
+      
+      // Make API call
+      await API.delete(`/projects/${projectId}/todos/${id}`);
+      
+      toast.success(`Task "${todoToDelete?.task}" removed from project`, {
+        icon: "🗑️",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error deleting todo:", error);
+      toast.error("Failed to remove task from project");
+      
+      // Revert on error
+      fetchProjectData();
+    }
+  }, [todos, projectId, canEdit, fetchProjectData]);
+
+  // Handle task completion toggle
+  const handleToggleComplete = useCallback(async (id, isChecked) => {
+    try {
+      const response = await API.patch(`/todos/toggle/${id}`, { isCompleted: isChecked });
+      setTodos(prevTasks =>
+        prevTasks.map(task =>
+          task._id === id ? response.data.data : task
         )
       );
-
-      // Make API call with explicit headers
-      await API.patch(`/todos/toggle/${todoId}`, 
-        { isCompleted: newStatus },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
+      
       toast.success(
-        newStatus ? "Task marked as complete!" : "Task marked as incomplete!",
+        isChecked ? "Task marked as complete!" : "Task marked as incomplete!",
         {
-          icon: newStatus ? "✅" : "⏳",
+          icon: isChecked ? "✅" : "⏳",
           duration: 2000,
         }
       );
     } catch (error) {
-      console.error("Error updating todo:", error);
+      console.error("Error toggling todo:", error);
       toast.error("Failed to update task status");
-
+      
       // Revert on error
-      const originalTodo = todos.find((t) => t._id === todoId);
-      if (originalTodo) {
-        setTodos((prev) =>
-          prev.map((todo) =>
-            todo._id === todoId
-              ? { ...todo, isCompleted: originalTodo.isCompleted }
-              : todo
-          )
-        );
-      }
+      fetchProjectData();
     }
-  },
-  [todos]
-);
+  }, [fetchProjectData]);
 
-  const handleDeleteTodo = useCallback(
-    async (todoId) => {
-      // if (
-      //   !window.confirm(
-      //     "Are you sure you want to remove this todo from the project?"
-      //   )
-      // )
-      //   return;
-
-      try {
-        const todoToDelete = todos.find((t) => t._id === todoId);
-
-        // Optimistically update UI
-        setTodos((prev) => prev.filter((todo) => todo._id !== todoId));
-
-        // Make API call
-        await API.delete(`/projects/${projectId}/todos/${todoId}`);
-
-        toast.success(`Task "${todoToDelete?.task}" removed from project`, {
-          icon: "🗑️",
-          duration: 3000,
-        });
-      } catch (error) {
-        console.error("Error deleting todo:", error);
-        toast.error("Failed to remove task from project");
-
-        // Revert on error
-        setTodos((prev) => [...prev, todoToDelete]);
-      }
-    },
-    [todos, projectId]
-  );
-
-  const handleUpdateTodo = useCallback(
-    async (e) => {
-      e.preventDefault();
-      if (!editTodoData.task.trim()) return;
-
-      const loadingToast = toast.loading("Updating task...");
-
-      try {
-        const originalTodos = todos;
-
-        // Optimistically update UI
-        setTodos((prev) =>
-          prev.map((todo) =>
-            todo._id === editTodoId ? { ...todo, ...editTodoData } : todo
-          )
-        );
-
-        // Make API call
-        await API.put(`/todos/update/${editTodoId}`, editTodoData);
-
-        toast.success("Task updated successfully!", { id: loadingToast });
-        cancelEditTodo();
-      } catch (error) {
-        console.error("Error updating todo:", error);
-        toast.error("Failed to update task", { id: loadingToast });
-
-        // Revert on error
-        setTodos(originalTodos);
-        cancelEditTodo();
-      }
-    },
-    [editTodoData, editTodoId, todos, cancelEditTodo]
-  );
-
-  // Memoize priority color function
-  const getPriorityColor = useCallback((priority) => {
-    switch (priority) {
-      case "high":
-        return "text-red-400 bg-red-500/20 border-red-500/30";
-      case "medium":
-        return "text-yellow-400 bg-yellow-500/20 border-yellow-500/30";
-      case "low":
-        return "text-green-400 bg-green-500/20 border-green-500/30";
-      default:
-        return "text-gray-400 bg-gray-500/20 border-gray-500/30";
-    }
+  // Handle search input change
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
   }, []);
 
-  // Memoize date formatting
-  const formatDate = useCallback((dateString) => {
-    if (!dateString) return "";
-    return new Date(dateString).toLocaleDateString();
+  // Handle filter change
+  const handleFilterChange = useCallback((newFilter) => {
+    setFilter(newFilter);
   }, []);
 
-  // Start edit functionality
-  const startEditTodo = useCallback((todo) => {
-    setEditTodoId(todo._id);
-    setEditTodoData({
-      task: todo.task,
-      description: todo.description || "",
-      priority: todo.priority || "medium",
-      dueDate: todo.dueDate ? todo.dueDate.slice(0, 10) : "",
-    });
-    setShowCreateForm(false);
-  }, []);
-
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: "spring",
-        stiffness: 100,
-        damping: 12,
-      },
-    },
-  };
-
-  const modalVariants = {
-    hidden: { opacity: 0, scale: 0.95 },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 25,
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.95,
-      transition: {
-        duration: 0.2,
-      },
-    },
-  };
-
+  // Loading state
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-          className="rounded-full h-32 w-32 border-4 border-blue-500 border-t-transparent"
-        />
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
-  if (!project) {
+  // Unauthenticated state
+  if (!currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center"
-        >
-          <h2 className="text-2xl font-bold text-white mb-4">
-            Project Not Found
-          </h2>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate("/TodoDashboard")}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-300 shadow-lg"
-          >
-            Back to Dashboard
-          </motion.button>
-        </motion.div>
+        <div className="text-center p-8 bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-slate-700">
+          <div className="text-6xl mb-4">🔒</div>
+          <p className="text-red-400 text-xl font-medium">Please log in to continue</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="max-w-6xl mx-auto"
-      >
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between mb-8"
-        >
-          <div className="flex items-center gap-4">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => navigate("/TodoDashboard")}
-              className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-6 h-6 text-slate-400" />
-            </motion.button>
-            <div>
-              <motion.h1
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"
-              >
-                {project.name}
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 }}
-                className="text-slate-400"
-              >
-                {project.description}
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4 }}
-                className="flex items-center gap-4 mt-2"
-              >
-                <span className="text-sm text-slate-500 flex items-center gap-2">
-                  <Target className="w-4 h-4" />
-                  {todos.length} tasks • {completionPercentage}% complete
-                </span>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs border ${
-                    project.userRole === "owner"
-                      ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                      : "bg-green-500/20 text-green-400 border-green-500/30"
-                  }`}
-                >
-                  <Star className="w-3 h-3 inline mr-1" />
-                  {project.userRole}
-                </span>
-              </motion.div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Project Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <button
+            onClick={() => navigate("/TodoDashboard")}
+            className="p-2 bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-800/70 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+              {project?.title || "Project Tasks"}
+            </h1>
+            <div className="flex items-center gap-4 mt-2">
+              <p className="text-slate-400">
+                {project?.description || "Collaborative task management"}
+              </p>
+              {socketConnected && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-green-500/20 border border-green-500/30 rounded-full">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  <span className="text-green-400 text-xs font-medium">
+                    {activeUsers.length} active
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.5 }}
-            className="flex items-center gap-2"
-          >
-            {canEdit && (
-              <motion.button
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowCreateForm(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all duration-300 shadow-lg hover:shadow-xl"
-              >
-                <Plus className="w-4 h-4" />
-                Add Task
-              </motion.button>
-            )}
-          </motion.div>
-        </motion.div>
-
-        {/* Create Todo Form Modal */}
-        <AnimatePresence>
-          {showCreateForm && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          {/* Add New Task Button - Only show if user can edit */}
+          {canEdit && (
+            <button
+              onClick={handleNewTaskClick}
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-purple-500/25"
             >
-              <motion.div
-                variants={modalVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="bg-slate-800/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-slate-700/50 p-6 w-full max-w-md"
-              >
-                <h3 className="text-xl font-bold text-white mb-4">
-                  Create New Task
-                </h3>
+              <Plus className="w-5 h-5" />
+              New Task
+            </button>
+          )}
+        </div>
 
-                <form onSubmit={handleCreateTodo} className="space-y-4">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                  >
-                    <label className="block text-slate-300 text-sm font-medium mb-2">
-                      Task Title *
-                    </label>
-                    <input
-                      type="text"
-                      value={newTodo.task}
-                      onChange={(e) =>
-                        setNewTodo({ ...newTodo, task: e.target.value })
-                      }
-                      className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                      placeholder="Enter task title"
-                      required
-                    />
-                  </motion.div>
+        {/* Progress Bar */}
+        <ProgressBar totalTasks={totalTasks} completedTasks={completedTasks} />
+        
+        {/* Search Input */}
+        <SearchInput 
+          searchTerm={searchTerm} 
+          onSearchChange={handleSearchChange} 
+        />
 
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <label className="block text-slate-300 text-sm font-medium mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      value={newTodo.description}
-                      onChange={(e) =>
-                        setNewTodo({ ...newTodo, description: e.target.value })
-                      }
-                      className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 resize-none"
-                      placeholder="Enter task description"
-                      rows={3}
-                    />
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="grid grid-cols-2 gap-4"
-                  >
-                    <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">
-                        Priority
-                      </label>
-                      <select
-                        value={newTodo.priority}
-                        onChange={(e) =>
-                          setNewTodo({ ...newTodo, priority: e.target.value })
-                        }
-                        className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 text-sm font-medium mb-2">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={newTodo.dueDate}
-                        onChange={(e) =>
-                          setNewTodo({ ...newTodo, dueDate: e.target.value })
-                        }
-                        className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                      />
-                    </div>
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="flex gap-2 pt-4"
-                  >
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      type="submit"
-                      disabled={creating}
-                      className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {creating ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        "Create Task"
-                      )}
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      type="button"
-                      onClick={() => setShowCreateForm(false)}
-                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </motion.button>
-                  </motion.div>
-                </form>
-              </motion.div>
+        {/* Todo Form - Show with animation when toggled */}
+        <AnimatePresence>
+          {showForm && canEdit && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: "auto", marginBottom: 32 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <TodoForm 
+                editingTodo={editingTodo}
+                onSubmit={handleFormSubmit}
+                onCancel={handleCancelEdit}
+                currentUser={currentUser}
+              />
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Progress Bar */}
-        {todos.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mb-6 p-4 bg-slate-800/50 backdrop-blur-sm rounded-lg border border-slate-700/50"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-300 text-sm flex items-center gap-2">
-                <Target className="w-4 h-4" />
-                Progress
-              </span>
-              <span className="text-slate-300 text-sm">
-                {completionPercentage}%
-              </span>
-            </div>
-            <div className="w-full bg-slate-700/50 rounded-full h-3 overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${completionPercentage}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-                className="bg-gradient-to-r from-blue-500 to-purple-600 h-full rounded-full relative"
-              >
-                <div className="absolute inset-0 bg-white/20 rounded-full animate-pulse"></div>
-              </motion.div>
-            </div>
-          </motion.div>
+        {/* Show message if user cannot edit */}
+        {!canEdit && (
+          <div className="mb-8 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+            <p className="text-yellow-400 text-center">
+              You have view-only access to this project
+            </p>
+          </div>
         )}
 
-        {/* Todos List */}
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="space-y-3"
-        >
-          {todos.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.5 }}
-              className="text-center py-12"
-            >
-              <motion.div
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
-              >
-                <Circle className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-              </motion.div>
-              <p className="text-slate-400 text-lg mb-2">No tasks yet</p>
-              <p className="text-slate-500 text-sm">
-                {canEdit
-                  ? "Create your first task to get started"
-                  : "No tasks have been added to this project"}
-              </p>
-            </motion.div>
+        {/* Filters */}
+        <TodoFilters 
+          currentFilter={filter} 
+          onFilterChange={handleFilterChange} 
+        />
+
+        {/* Tasks List */}
+        <div className="space-y-4">
+          {filteredTodos.length === 0 ? (
+            <EmptyState searchTerm={searchTerm} filter={filter} />
           ) : (
-            <AnimatePresence>
-              {todos.map((todo) => (
-                <motion.div
-                  key={todo._id}
-                  variants={itemVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit={{ opacity: 0, x: -100, transition: { duration: 0.3 } }}
-                  layout
-                  className={`p-4 bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700/50 transition-all duration-200 hover:bg-slate-800/70 hover:border-slate-600/50 ${
-                    todo.isCompleted ? "opacity-60" : ""
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => canEdit && handleToggleTodo(todo._id)}
-                      className={`mt-1 transition-colors ${
-                        canEdit ? "hover:scale-110" : "cursor-default"
-                      }`}
-                      disabled={!canEdit}
-                    >
-                      <AnimatePresence mode="wait">
-                        {todo.isCompleted ? (
-                          <motion.div
-                            key="completed"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 500,
-                              damping: 30,
-                            }}
-                          >
-                            <CheckCircle className="w-5 h-5 text-green-500" />
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key="incomplete"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            exit={{ scale: 0 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 500,
-                              damping: 30,
-                            }}
-                          >
-                            <Circle className="w-5 h-5 text-slate-400" />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-
-                    <div className="flex-1">
-                      {editTodoId === todo._id ? (
-                        <motion.form
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          onSubmit={handleUpdateTodo}
-                          className="space-y-2"
-                        >
-                          <input
-                            type="text"
-                            value={editTodoData.task}
-                            onChange={(e) =>
-                              setEditTodoData({
-                                ...editTodoData,
-                                task: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 rounded-lg bg-slate-700/50 text-white border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                            required
-                          />
-                          <textarea
-                            value={editTodoData.description}
-                            onChange={(e) =>
-                              setEditTodoData({
-                                ...editTodoData,
-                                description: e.target.value,
-                              })
-                            }
-                            className="w-full px-3 py-2 rounded-lg bg-slate-700/50 text-white border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 resize-none"
-                            rows={2}
-                          />
-                          <div className="flex gap-2">
-                            <select
-                              value={editTodoData.priority}
-                              onChange={(e) =>
-                                setEditTodoData({
-                                  ...editTodoData,
-                                  priority: e.target.value,
-                                })
-                              }
-                              className="px-3 py-2 rounded-lg bg-slate-700/50 text-white border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                            >
-                              <option value="low">Low</option>
-                              <option value="medium">Medium</option>
-                              <option value="high">High</option>
-                            </select>
-                            <input
-                              type="date"
-                              value={editTodoData.dueDate}
-                              onChange={(e) =>
-                                setEditTodoData({
-                                  ...editTodoData,
-                                  dueDate: e.target.value,
-                                })
-                              }
-                              className="px-3 py-2 rounded-lg bg-slate-700/50 text-white border border-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <motion.button
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              type="submit"
-                              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg"
-                            >
-                              Save
-                            </motion.button>
-                            <motion.button
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              type="button"
-                              onClick={cancelEditTodo}
-                              className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-500 transition-colors"
-                            >
-                              Cancel
-                            </motion.button>
-                          </div>
-                        </motion.form>
-                      ) : (
-                        <>
-                          <h3
-                            className={`font-medium transition-all duration-200 ${
-                              todo.isCompleted
-                                ? "text-slate-500 line-through"
-                                : "text-white"
-                            }`}
-                          >
-                            {todo.task}
-                          </h3>
-                          {todo.description && (
-                            <p className="text-slate-400 text-sm mt-1">
-                              {todo.description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-4 mt-2">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs border ${getPriorityColor(
-                                todo.priority
-                              )}`}
-                            >
-                              <Flag className="w-3 h-3 inline mr-1" />
-                              {todo.priority}
-                            </span>
-                            {todo.dueDate && (
-                              <span className="text-slate-400 text-xs flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {formatDate(todo.dueDate)}
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {canEdit && (
-                      <div className="flex flex-col gap-1">
-                        <motion.button
-                          whileHover={{
-                            scale: 1.1,
-                            backgroundColor: "rgba(59, 130, 246, 0.2)",
-                          }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => startEditTodo(todo)}
-                          className="p-2 rounded-lg transition-all duration-200 text-blue-400"
-                          disabled={editTodoId === todo._id}
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{
-                            scale: 1.1,
-                            backgroundColor: "rgba(239, 68, 68, 0.2)",
-                          }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleDeleteTodo(todo._id)}
-                          className="p-2 rounded-lg transition-all duration-200 text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </motion.button>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            filteredTodos.map(task => (
+              <TodoItem
+                key={task._id}
+                task={task}
+                onToggleComplete={handleToggleComplete}
+                onEdit={handleEditClick}
+                onDelete={handleDelete}
+              />
+            ))
           )}
-        </motion.div>
-      </motion.div>
+        </div>
+
+        {/* Active Users Display */}
+        {activeUsers.length > 0 && (
+          <div className="mt-8 p-4 bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700/50">
+            <h3 className="text-slate-300 font-medium mb-3">Active Users</h3>
+            <div className="flex flex-wrap gap-2">
+              {activeUsers.map((user, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-3 py-1 bg-slate-700/50 rounded-full border border-slate-600/50"
+                >
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span className="text-slate-300 text-sm">
+                    {user.username} 
+                    <span className="text-slate-500 ml-1">({user.role})</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
