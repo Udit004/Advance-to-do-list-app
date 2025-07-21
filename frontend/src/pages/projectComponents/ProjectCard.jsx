@@ -29,7 +29,7 @@ import {
  * Enhanced Project Card Component
  * Displays individual project information with improved visibility and user experience
  */
-const ProjectCard = ({ project, viewMode = "grid" }) => {
+const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -150,19 +150,6 @@ const ProjectCard = ({ project, viewMode = "grid" }) => {
     console.log("Toggle bookmark for project:", project._id);
   };
 
-  /**
-   * Handle project deletion
-   */
-  const handleDelete = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to delete this project? This action cannot be undone."
-      )
-    ) {
-      console.log("Delete project:", project._id);
-    }
-    setShowDropdown(false);
-  };
 
   /**
    * Handle edit project
@@ -517,7 +504,7 @@ const ProjectCard = ({ project, viewMode = "grid" }) => {
 
                           <div className="h-px bg-slate-700/50 my-2"></div>
                           <button
-                            onClick={handleDelete}
+                            onClick={() => onDelete(project.id)}
                             className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 hover:text-red-300 border border-transparent hover:border-red-500/20"
                           >
                             <Trash2 className="w-4 h-4" />

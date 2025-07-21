@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import API from '../api/config';
-import { AlertCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import API from "../api/config";
+import { AlertCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 // Import child components
-import DashboardHeader from './projectComponents/DashboardHeader';
-import StatsCards from './projectComponents/StatsCards';
-import PendingInvitations from './projectComponents/PendingInvitations';
-import SearchAndFilters from './projectComponents/SearchAndFilters';
-import CreateProjectModal from './projectComponents/CreateProjectModal';
-import ProjectGrid from './projectComponents/ProjectGrid';
-import ProjectList from './projectComponents/ProjectList';
-import LoadingSpinner from './projectComponents/LoadingSpinner';
+import DashboardHeader from "./projectComponents/DashboardHeader";
+import StatsCards from "./projectComponents/StatsCards";
+import PendingInvitations from "./projectComponents/PendingInvitations";
+import SearchAndFilters from "./projectComponents/SearchAndFilters";
+import CreateProjectModal from "./projectComponents/CreateProjectModal";
+import ProjectGrid from "./projectComponents/ProjectGrid";
+import ProjectList from "./projectComponents/ProjectList";
+import LoadingSpinner from "./projectComponents/LoadingSpinner";
 
 /**
  * Main ProjectDashboard Component
@@ -20,15 +20,15 @@ import LoadingSpinner from './projectComponents/LoadingSpinner';
  */
 const ProjectDashboard = () => {
   const { currentUser } = useAuth();
-  
+
   // State management
   const [projects, setProjects] = useState([]);
   const [pendingInvitations, setPendingInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'owned', 'shared'
-  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
+  const [filterStatus, setFilterStatus] = useState("all"); // 'all', 'owned', 'shared'
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Fetch data on component mount
   useEffect(() => {
@@ -47,13 +47,13 @@ const ProjectDashboard = () => {
     try {
       const [projectsResponse, invitationsResponse] = await Promise.all([
         API.get(`/projects/user/${currentUser.uid}?includePublic=true`),
-        API.get('/projects/invitations/pending')
+        API.get("/projects/invitations/pending"),
       ]);
-      
+
       setProjects(projectsResponse.data.data || []);
       setPendingInvitations(invitationsResponse.data.data || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
@@ -64,12 +64,21 @@ const ProjectDashboard = () => {
    */
   const handleCreateProject = async (projectData) => {
     try {
-      const response = await API.post('/projects/create', projectData);
+      const response = await API.post("/projects/create", projectData);
       setProjects([response.data.data, ...projects]);
       setShowCreateForm(false);
     } catch (error) {
-      console.error('Error creating project:', error);
+      console.error("Error creating project:", error);
       throw error; // Re-throw to handle in modal
+    }
+  };
+
+  const handleDeleteProject = async (projectId) => {
+    try {
+      await API.delete(`/projects/${projectId}`);
+      setProjects((prev) => prev.filter((p) => p._id !== projectId));
+    } catch (err) {
+      console.error("Delete failed:", err);
     }
   };
 
@@ -79,29 +88,32 @@ const ProjectDashboard = () => {
   const handleInvitationResponse = async (projectId, action) => {
     try {
       await API.post(`/projects/${projectId}/respond`, { action });
-      setPendingInvitations(prev => prev.filter(inv => inv._id !== projectId));
-      if (action === 'accept') {
+      setPendingInvitations((prev) =>
+        prev.filter((inv) => inv._id !== projectId)
+      );
+      if (action === "accept") {
         fetchData(); // Refresh to show newly accepted project
       }
     } catch (error) {
-      console.error('Error responding to invitation:', error);
+      console.error("Error responding to invitation:", error);
     }
   };
 
   /**
    * Filter projects based on search term and status
    */
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+  const filteredProjects = projects.filter((project) => {
+    const matchesSearch =
+      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.description?.toLowerCase().includes(searchTerm.toLowerCase());
+
     if (!matchesSearch) return false;
 
     switch (filterStatus) {
-      case 'owned':
-        return project.userRole === 'owner';
-      case 'shared':
-        return project.userRole !== 'owner';
+      case "owned":
+        return project.userRole === "owner";
+      case "shared":
+        return project.userRole !== "owner";
       default:
         return true;
     }
@@ -118,10 +130,14 @@ const ProjectDashboard = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl shadow-2xl border border-slate-700/50 p-8 text-center">
           <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-4">Authentication Required</h2>
-          <p className="text-slate-300 mb-6">Please log in to access your projects.</p>
-          <Link 
-            to="/login" 
+          <h2 className="text-2xl font-bold text-white mb-4">
+            Authentication Required
+          </h2>
+          <p className="text-slate-300 mb-6">
+            Please log in to access your projects.
+          </p>
+          <Link
+            to="/login"
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-yellow-500 text-slate-900 font-semibold rounded-lg hover:from-orange-600 hover:to-yellow-600 transition-all duration-200"
           >
             Go to Login
@@ -138,19 +154,19 @@ const ProjectDashboard = () => {
         <DashboardHeader onCreateProject={() => setShowCreateForm(true)} />
 
         {/* Statistics Cards - USING COMPONENT */}
-        <StatsCards 
+        <StatsCards
           projects={projects}
           pendingInvitations={pendingInvitations}
         />
 
         {/* Pending Invitations - USING COMPONENT */}
-        <PendingInvitations 
+        <PendingInvitations
           invitations={pendingInvitations}
           onRespond={handleInvitationResponse}
         />
 
         {/* Search and Filters - USING COMPONENT */}
-        <SearchAndFilters 
+        <SearchAndFilters
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           filterStatus={filterStatus}
@@ -161,17 +177,23 @@ const ProjectDashboard = () => {
 
         {/* Create Project Modal - USING COMPONENT */}
         {showCreateForm && (
-          <CreateProjectModal 
+          <CreateProjectModal
             onClose={() => setShowCreateForm(false)}
             onSubmit={handleCreateProject}
           />
         )}
 
         {/* Projects Display - USING BOTH COMPONENTS */}
-        {viewMode === 'grid' ? (
-          <ProjectGrid projects={filteredProjects} />
+        {viewMode === "grid" ? (
+          <ProjectGrid
+            projects={filteredProjects}
+            onDelete={handleDeleteProject}
+          />
         ) : (
-          <ProjectList projects={filteredProjects} />
+          <ProjectList
+            projects={filteredProjects}
+            onDelete={handleDeleteProject}
+          />
         )}
       </div>
     </div>

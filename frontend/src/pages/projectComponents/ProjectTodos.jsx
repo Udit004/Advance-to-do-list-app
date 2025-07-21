@@ -447,7 +447,7 @@ const ProjectTodos = () => {
           {/* Project title and description */}
           <div className="space-y-2">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent leading-tight">
-              {project?.title || "Project Tasks"}
+              {project?.name || "Project Tasks"}
             </h1>
 
             {(project?.description || "Collaborative task management") && (

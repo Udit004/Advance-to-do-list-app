@@ -505,12 +505,14 @@ const deleteProject = async (req, res) => {
       success: true,
       message: "Project deleted successfully",
     });
+    console.log(`Project ${projectId} deleted by user ${userId}`);
   } catch (error) {
     res.status(500).json({
       success: false,
       message: "Error deleting project",
       error: error.message,
     });
+    console.error(`Error deleting project ${projectId}:`, error);
   }
 };
 

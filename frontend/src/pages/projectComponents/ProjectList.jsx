@@ -6,7 +6,7 @@ import ProjectCard from './ProjectCard';
  * Project List Component
  * Displays projects in a list layout
  */
-const ProjectList = ({ projects }) => {
+const ProjectList = ({ projects, onDelete }) => {
   if (projects.length === 0) {
     return (
       <div className="text-center py-12">
@@ -24,6 +24,7 @@ const ProjectList = ({ projects }) => {
           key={project._id} 
           project={project} 
           viewMode="list"
+          onDelete={onDelete}
         />
       ))}
     </div>

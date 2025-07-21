@@ -6,7 +6,7 @@ import ProjectCard from './ProjectCard';
  * Project Grid Component
  * Displays projects in a grid layout
  */
-const ProjectGrid = ({ projects }) => {
+const ProjectGrid = ({ projects, onDelete }) => {
   if (projects.length === 0) {
     return (
       <div className="text-center py-12">
@@ -24,6 +24,7 @@ const ProjectGrid = ({ projects }) => {
           key={project._id} 
           project={project} 
           viewMode="grid"
+          onDelete={onDelete}
         />
       ))}
     </div>

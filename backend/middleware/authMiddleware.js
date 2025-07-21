@@ -3,7 +3,7 @@ const admin = require('firebase-admin');
 const authMiddleware = async (req, res, next) => {
   try {
     console.log('Auth Middleware executed');
-    console.log('Request Headers:', req.headers); // Log all request headers
+    // console.log('Request Headers:', req.headers); // Log all request headers
     
     // Extract the token from Authorization header
     const authHeader = req.headers.authorization;
@@ -20,7 +20,7 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    console.log('Decoded Token:', decodedToken);
+    // console.log('Decoded Token:', decodedToken);
     
     // Set req.user with the expected structure
     req.user = {
@@ -32,7 +32,7 @@ const authMiddleware = async (req, res, next) => {
       ...decodedToken                  // Include all other Firebase token properties
     };
     
-    console.log('Set req.user:', req.user);
+    // console.log('Set req.user:', req.user);
     next();
   } catch (error) {
     console.error('Error verifying Firebase ID token:', error);
