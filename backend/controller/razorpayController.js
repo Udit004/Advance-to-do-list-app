@@ -62,12 +62,14 @@ const sendEmailNotification = async (userEmail, subject, htmlContent) => {
       html: htmlContent
     });
     console.log('Email notification sent successfully to:', userEmail);
+    return true;
   } catch (error) {
     console.error('Email notification failed:', error);
+    return false;
   }
 };
 
-// Utility function: Send complete notification (Socket.IO + Push + Email)
+// Utility function: Send complete notification (Socket.IO + Push + Email) - FIXED VERSION
 const sendCompleteNotification = async (userId, notificationData, emailData = null) => {
   try {
     // Check if notification already exists to prevent duplicates
@@ -90,33 +92,49 @@ const sendCompleteNotification = async (userId, notificationData, emailData = nu
         { new: true }
       );
     } else {
-      // Create new notification
+      // Create new notification - FIXED: Added todoId field
       notification = await Notification.create({
         user: userId,
+        todoId: notificationData.todoId || null, // Add todoId field for consistency
         message: notificationData.message,
         type: notificationData.type,
         read: false
       });
     }
 
-    // Send real-time notification via Socket.IO
+    // Send real-time notification via Socket.IO - FIXED: Proper structure
     sendNotificationToUser(userId, {
       _id: notification._id,
       user: userId,
+      todoId: notificationData.todoId || null,
       message: notificationData.message,
       type: notificationData.type,
       read: false,
       createdAt: notification.createdAt
     });
 
+    console.log('Socket.IO notification sent for user:', userId);
+
     // Send push notification
     if (notificationData.pushPayload) {
       await sendPushNotifications(userId, notificationData.pushPayload);
     }
 
-    // Send email notification
-    if (emailData) {
-      await sendEmailNotification(emailData.email, emailData.subject, emailData.htmlContent);
+    // Send email notification - IMPROVED ERROR HANDLING
+    if (emailData && emailData.email) {
+      const emailSent = await sendEmailNotification(
+        emailData.email, 
+        emailData.subject, 
+        emailData.htmlContent
+      );
+      
+      if (emailSent) {
+        console.log('Complete notification sent successfully (Socket.IO + Push + Email)');
+      } else {
+        console.log('Complete notification sent partially (Socket.IO + Push, Email failed)');
+      }
+    } else {
+      console.log('Complete notification sent (Socket.IO + Push only)');
     }
 
     return notification;
@@ -152,7 +170,7 @@ const initiatePayment = async (req, res) => {
     setImmediate(async () => {
       try {
         const userProfile = await UserProfile.findOne({ uid: userId });
-        if (userProfile) {
+        if (userProfile && userProfile.email) {
           const paymentInitiationEmailContent = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
               <h2 style="color: #333; text-align: center;">Payment Initiated 💳</h2>
@@ -179,6 +197,7 @@ const initiatePayment = async (req, res) => {
           await sendCompleteNotification(userId, {
             message,
             type: 'payment_initiated',
+            todoId: null, // Payment notifications don't have todoId
             pushPayload: {
               title: "Payment Initiated 💳",
               body: message,
@@ -191,6 +210,10 @@ const initiatePayment = async (req, res) => {
             subject: 'TodoApp - Payment Initiated Successfully',
             htmlContent: paymentInitiationEmailContent
           });
+
+          console.log('Payment initiation notification sent for user:', userId);
+        } else {
+          console.log('Payment initiation notification skipped - user profile or email not found');
         }
       } catch (notificationError) {
         console.error('Background payment initiation notification error:', notificationError);
@@ -357,60 +380,79 @@ const handleWebhook = async (req, res) => {
           console.log('🔄 Direct update result:', directUpdateResult);
         }
 
-        // Send payment success notifications in background (non-blocking)
+        // Send payment success notifications in background (non-blocking) - FIXED VERSION
         setImmediate(async () => {
           try {
             if (updatedUser.email) {
               const paymentSuccessEmailContent = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                  <h2 style="color: #28a745; text-align: center;">Payment Successful! 🎉</h2>
+                  <h2 style="color: #28a745; text-align: center;">🎉 Welcome to Premium! 🎉</h2>
                   <p>Hi ${updatedUser.name || 'there'},</p>
-                  <p>Congratulations! Your payment has been processed successfully and your premium features are now active.</p>
+                  <p>Congratulations! Your payment has been processed successfully and you are now a <strong>Premium Member</strong>!</p>
                   <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745;">
-                    <h3 style="color: #155724; margin-top: 0;">Payment Confirmation:</h3>
+                    <h3 style="color: #155724; margin-top: 0;">🎊 Payment Confirmation:</h3>
                     <ul style="list-style: none; padding: 0;">
                       <li style="margin: 10px 0;"><strong>Payment ID:</strong> ${payment.id}</li>
                       <li style="margin: 10px 0;"><strong>Amount Paid:</strong> ₹${(payment.amount / 100).toFixed(2)}</li>
-                      <li style="margin: 10px 0;"><strong>Plan:</strong> ${plan.charAt(0).toUpperCase() + plan.slice(1)}</li>
+                      <li style="margin: 10px 0;"><strong>Plan:</strong> ${plan.charAt(0).toUpperCase() + plan.slice(1)} Premium</li>
                       <li style="margin: 10px 0;"><strong>Payment Date:</strong> ${new Date().toLocaleDateString()}</li>
-                      <li style="margin: 10px 0;"><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">✅ Completed</span></li>
+                      <li style="margin: 10px 0;"><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">✅ Premium Activated!</span></li>
                     </ul>
                   </div>
                   <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                    <h4 style="color: #495057; margin-top: 0;">What's Next?</h4>
+                    <h4 style="color: #495057; margin-top: 0;">🚀 Your Premium Benefits:</h4>
                     <ul>
-                      <li>Your premium features are now active</li>
-                      <li>You can access all premium functionalities</li>
-                      <li>Enjoy enhanced productivity with TodoApp!</li>
+                      <li>✨ Unlimited todo creation</li>
+                      <li>📋 Advanced project management</li>
+                      <li>🎯 Priority support</li>
+                      <li>📊 Advanced analytics</li>
+                      <li>🔔 Enhanced notifications</li>
+                      <li>☁️ Cloud sync across devices</li>
                     </ul>
                   </div>
-                  <p>Thank you for choosing TodoApp Premium. We're excited to help you boost your productivity!</p>
-                  <p>If you have any questions or need assistance, feel free to reach out to our support team.</p>
-                  <p>Best regards,<br>The TodoApp Team</p>
+                  <div style="text-align: center; margin: 30px 0;">
+                    <p style="font-size: 18px; color: #28a745; font-weight: bold;">🎉 You're now part of our Premium family! 🎉</p>
+                  </div>
+                  <p>Thank you for choosing TodoApp Premium. We're excited to help you achieve maximum productivity!</p>
+                  <p>If you have any questions or need assistance with your premium features, feel free to reach out to our priority support team.</p>
+                  <p>Welcome aboard!<br><strong>The TodoApp Team</strong></p>
                 </div>
               `;
               
-              const message = `Payment successful! ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan activated - ₹${(payment.amount / 100).toFixed(2)}`;
+              const message = `🎉 Welcome to Premium! ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan activated - ₹${(payment.amount / 100).toFixed(2)}`;
               
               // Send complete notification (Socket.IO + Push + Email)
-              await sendCompleteNotification(userId, {
+              const notificationResult = await sendCompleteNotification(userId, {
                 message,
-                type: 'payment_success',
+                type: 'premium_activated',
+                todoId: null, // Premium activation notifications don't have todoId
                 pushPayload: {
-                  title: "Payment Successful! 🎉",
-                  body: message,
+                  title: "🎉 Premium Activated!",
+                  body: `Welcome to TodoApp Premium! Your ${plan} plan is now active.`,
                   icon: '/favicon.ico',
                   badge: '/favicon.ico',
-                  data: { paymentId: payment.id, type: 'payment_success' }
+                  data: { 
+                    paymentId: payment.id, 
+                    type: 'premium_activated',
+                    plan: plan
+                  }
                 }
               }, {
                 email: updatedUser.email,
-                subject: 'TodoApp - Payment Successful! Premium Activated 🎉',
+                subject: '🎉 TodoApp Premium Activated - Welcome to the Family!',
                 htmlContent: paymentSuccessEmailContent
               });
+
+              if (notificationResult) {
+                console.log('✅ Premium activation notification sent successfully for user:', userId);
+              } else {
+                console.log('⚠️ Premium activation notification had issues for user:', userId);
+              }
+            } else {
+              console.log('⚠️ Premium activation notification skipped - no email found for user:', userId);
             }
           } catch (notificationError) {
-            console.error('Background payment success notification error:', notificationError);
+            console.error('❌ Background premium activation notification error:', notificationError);
           }
         });
         
@@ -437,7 +479,7 @@ const handleWebhook = async (req, res) => {
         error: payment.error_description
       });
 
-      // Send payment failure notifications in background (non-blocking)
+      // Send payment failure notifications in background (non-blocking) - FIXED VERSION
       if (userId) {
         setImmediate(async () => {
           try {
@@ -475,24 +517,37 @@ const handleWebhook = async (req, res) => {
               const message = `Payment failed - ₹${(payment.amount / 100).toFixed(2)}. ${payment.error_description || 'Please try again.'}`;
               
               // Send complete notification (Socket.IO + Push + Email)
-              await sendCompleteNotification(userId, {
+              const notificationResult = await sendCompleteNotification(userId, {
                 message,
                 type: 'payment_failed',
+                todoId: null, // Payment notifications don't have todoId
                 pushPayload: {
                   title: "Payment Failed ❌",
                   body: message,
                   icon: '/favicon.ico',
                   badge: '/favicon.ico',
-                  data: { paymentId: payment.id, type: 'payment_failed' }
+                  data: { 
+                    paymentId: payment.id, 
+                    type: 'payment_failed',
+                    error: payment.error_description || 'Unknown error'
+                  }
                 }
               }, {
                 email: userProfile.email,
                 subject: 'TodoApp - Payment Failed - Action Required',
                 htmlContent: paymentFailureEmailContent
               });
+
+              if (notificationResult) {
+                console.log('✅ Payment failure notification sent successfully for user:', userId);
+              } else {
+                console.log('⚠️ Payment failure notification had issues for user:', userId);
+              }
+            } else {
+              console.log('⚠️ Payment failure notification skipped - user profile or email not found for user:', userId);
             }
           } catch (notificationError) {
-            console.error('Background payment failure notification error:', notificationError);
+            console.error('❌ Background payment failure notification error:', notificationError);
           }
         });
       }

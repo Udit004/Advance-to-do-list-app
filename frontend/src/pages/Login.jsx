@@ -5,7 +5,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
 } from "firebase/auth";
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from "../context/AuthContext";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -22,10 +22,14 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const result = await signInWithGoogle();
-      if (result) {
+      const user = await signInWithGoogle();
+      console.log("Google sign-in returned:", user);
+
+      if (user) {
+        console.log("Navigating to /TodoDashboard");
         navigate("/TodoDashboard");
       } else {
+        console.log("Google login failed - user is null");
         setError("Failed to login with Google");
       }
     } catch (error) {
@@ -90,19 +94,30 @@ const Login = () => {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
               <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-yellow-500 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                <svg
+                  className="w-6 h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                  />
                 </svg>
               </div>
             </div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-yellow-500 bg-clip-text text-transparent mb-2">
-              {isLogin ? "Welcome Back to ZenList" : "Create Your ZenList Account"}
+              {isLogin
+                ? "Welcome Back to ZenList"
+                : "Create Your ZenList Account"}
             </h1>
             <p className="text-slate-400 text-sm">
-              {isLogin 
-                ? "Sign in to organize your thoughts with ZenList" 
-                : "Join thousands organizing their thoughts with ZenList"
-              }
+              {isLogin
+                ? "Sign in to organize your thoughts with ZenList"
+                : "Join thousands organizing their thoughts with ZenList"}
             </p>
           </div>
 
@@ -110,8 +125,18 @@ const Login = () => {
           {error && (
             <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
               <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.962-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                <svg
+                  className="w-5 h-5 text-red-400 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.962-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                  />
                 </svg>
                 <span className="text-red-300 text-sm">{error}</span>
               </div>
@@ -122,7 +147,10 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-slate-300 mb-2"
+              >
                 Email Address
               </label>
               <input
@@ -139,7 +167,10 @@ const Login = () => {
             {/* Password field */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label htmlFor="password" className="block text-sm font-medium text-slate-300">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium text-slate-300"
+                >
                   Password
                 </label>
                 {isLogin && (
@@ -155,7 +186,9 @@ const Login = () => {
                 type="password"
                 id="password"
                 required
-                placeholder={isLogin ? "Enter your password" : "Create a strong password"}
+                placeholder={
+                  isLogin ? "Enter your password" : "Create a strong password"
+                }
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 minLength={6}
@@ -174,8 +207,10 @@ const Login = () => {
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                   {isLogin ? "Signing In..." : "Creating Account..."}
                 </div>
+              ) : isLogin ? (
+                "Sign In"
               ) : (
-                isLogin ? "Sign In" : "Create Account"
+                "Create Account"
               )}
             </button>
           </form>
@@ -235,7 +270,7 @@ const Login = () => {
             <div className="mt-7 text-center">
               <p className="text-slate-400 text-sm">
                 New to ZenList?{" "}
-                <button 
+                <button
                   onClick={() => navigate("/signup")}
                   className="text-orange-400 hover:text-orange-300 font-medium transition-colors duration-200"
                 >
@@ -249,10 +284,9 @@ const Login = () => {
         {/* Bottom text */}
         <div className="mt-6 text-center">
           <p className="text-slate-500 text-xs">
-            {isLogin 
+            {isLogin
               ? "Secure login with industry-standard encryption"
-              : "By creating an account, you agree to our Terms of Service and Privacy Policy"
-            }
+              : "By creating an account, you agree to our Terms of Service and Privacy Policy"}
           </p>
         </div>
       </div>
