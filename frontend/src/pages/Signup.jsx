@@ -40,7 +40,7 @@ const Signup = () => {
       const result = await signInWithGoogle();
       if (result) {
         console.log("Google signup successful");
-        navigate("/");
+        navigate("/TodoDashboard");
       } else {
         setError("Failed to sign up with Google");
       }

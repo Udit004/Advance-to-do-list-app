@@ -24,7 +24,7 @@ const Login = () => {
     try {
       const result = await signInWithGoogle();
       if (result) {
-        navigate("/");
+        navigate("/TodoDashboard");
       } else {
         setError("Failed to login with Google");
       }
@@ -52,11 +52,11 @@ const Login = () => {
       if (isLogin) {
         // Handle login
         await signInWithEmailAndPassword(auth, email, password);
-        navigate("/");
+        navigate("/TodoDashboard");
       } else {
         // Handle signup
         await createUserWithEmailAndPassword(auth, email, password);
-        navigate("/");
+        navigate("/TodoDashboard");
       }
     } catch (err) {
       console.error("Authentication error:", err);
