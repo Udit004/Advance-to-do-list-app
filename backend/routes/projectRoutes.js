@@ -40,7 +40,7 @@ router.put("/:id", updateProject);
 router.delete("/:id", deleteProject);
 
 // TODO MANAGEMENT IN PROJECTS (using :projectId to avoid conflicts)
-router.post("/:projectId/todos", addTodoToProject);
+// router.post("/:projectId/todos", addTodoToProject);
 router.post("/:projectId/todos/create", createTodoInProject);
 router.put("/:projectId/todos/:todoId", updateTodoInProject);
 router.patch("/:projectId/todos/:todoId/toggle", toggleTodoInProject);

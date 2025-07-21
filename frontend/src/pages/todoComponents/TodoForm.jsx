@@ -93,48 +93,43 @@ const TodoForm = ({ editingTodo, onSubmit, onCancel, currentUser }) => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  e.preventDefault();
+  setIsSubmitting(true);
 
-    try {
-      let taskPriority = formData.priority;
+  try {
+    let taskPriority = formData.priority;
 
-      if (!taskPriority) {
-        taskPriority = predictedPriority || "low";
-      }
-
-      const taskPayload = {
-        ...formData,
-        user: currentUser?.uid,
-        priority: taskPriority.toLowerCase(),
-        isCompleted: editingTodo ? editingTodo.isCompleted : false,
-      };
-
-      if (editingTodo) {
-        const response = await API.put(`/todos/update/${editingTodo._id}`, taskPayload);
-        onSubmit(response.data, editingTodo);
-      } else {
-        const response = await API.post('/todos/create/', {
-          ...taskPayload,
-          user: currentUser.uid,
-        });
-        onSubmit(response.data, null);
-        setFormData({
-          task: "",
-          description: "",
-          dueDate: "",
-          priority: "",
-          list: "",
-        });
-        setPredictedPriority("");
-      }
-
-    } catch (error) {
-      console.error("Error submitting form:", error);
-    } finally {
-      setIsSubmitting(false);
+    if (!taskPriority) {
+      taskPriority = predictedPriority || "low";
     }
-  };
+
+    const taskPayload = {
+      ...formData,
+      priority: taskPriority.toLowerCase(),
+      isCompleted: editingTodo ? editingTodo.isCompleted : false,
+    };
+
+    // ✅ FIXED: Pass data to parent instead of making API call here
+    await onSubmit(taskPayload, editingTodo);
+
+    // Only reset form for new todos (not edits)
+    if (!editingTodo) {
+      setFormData({
+        task: "",
+        description: "",
+        dueDate: "",
+        priority: "",
+        list: "",
+      });
+      setPredictedPriority("");
+    }
+
+  } catch (error) {
+    console.error("Error submitting form:", error);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleCancel = () => {
     setFormData({
