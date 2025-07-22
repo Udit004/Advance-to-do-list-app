@@ -313,11 +313,43 @@ const emitToProject = (projectId, eventName, data) => {
 
 // NEW: Specific project event functions
 const emitTodoCreated = (projectId, todoData) => {
-  return emitToProject(projectId, "todoCreated", {
-    projectId,
-    todo: todoData,
-    timestamp: new Date()
-  });
+  try {
+    console.log('📡 Emitting todoCreated to project:', projectId);
+    
+    return emitToProject(projectId, "todoCreated", {
+      projectId,
+      todo: {
+        ...todoData,
+        project: projectId // Ensure project is included
+      },
+      createdBy: todoData.createdBy || 'Anonymous',
+      timestamp: new Date()
+    });
+  } catch (socketError) {
+    console.error('❌ Failed to emit todoCreated:', socketError);
+    // Don't throw - socket errors shouldn't fail the API request
+  }
+};
+
+// ✅ ALSO ADD: Retry mechanism for critical operations
+const createTodoWithRetry = async (todoData, maxRetries = 3) => {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await new Todo(todoData).save();
+    } catch (error) {
+      console.warn(`Attempt ${attempt} failed:`, error.message);
+      lastError = error;
+      
+      if (attempt < maxRetries) {
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
+    }
+  }
+  
+  throw lastError;
 };
 
 const emitTodoUpdated = (projectId, todoData) => {
@@ -396,6 +428,7 @@ module.exports = {
   // NEW exports for project collaboration
   emitToProject,
   emitTodoCreated,
+  createTodoWithRetry,
   emitTodoUpdated,
   emitTodoDeleted,
   emitTodoToggled,

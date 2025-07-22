@@ -27,14 +27,9 @@ const ProjectTodos = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editingTodo, setEditingTodo] = useState(null);
-
-  // New state for form visibility
   const [showForm, setShowForm] = useState(false);
-
-  // Filter and search states (matching TodoList)
   const [filter, setFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-
   const [activeUsers, setActiveUsers] = useState([]);
   const [socketConnected, setSocketConnected] = useState(false);
 
@@ -51,12 +46,10 @@ const ProjectTodos = () => {
     );
   }, [project]);
 
-  // Filter todos based on search term and filter (matching TodoList logic)
+  // Filter todos based on search term and filter
   const filteredTodos = useMemo(() => {
     return todos.filter((task) => {
       const term = searchTerm.toLowerCase();
-
-      // Filter by completion status
       const matchFilter =
         filter === "completed"
           ? task.isCompleted
@@ -64,7 +57,6 @@ const ProjectTodos = () => {
           ? !task.isCompleted
           : true;
 
-      // Filter by search term
       const matchSearch =
         (task.task && task.task.toLowerCase().includes(term)) ||
         (task.description && task.description.toLowerCase().includes(term)) ||
@@ -74,36 +66,31 @@ const ProjectTodos = () => {
     });
   }, [todos, searchTerm, filter]);
 
-  // Computed values for components
   const totalTasks = todos.length;
   const completedTasks = todos.filter((task) => task.isCompleted).length;
 
-  // Toggle form visibility
   const toggleForm = useCallback(() => {
     setShowForm((prev) => !prev);
-    // Reset editing state when hiding form
     if (showForm) {
       setEditingTodo(null);
     }
   }, [showForm]);
 
-  // ✅ IMPROVED: Handle new task button with state check
-const handleNewTaskClick = useCallback(() => {
-  if (!canEdit) {
-    toast.error("You don't have permission to create tasks in this project");
-    return;
-  }
+  const handleNewTaskClick = useCallback(() => {
+    if (!canEdit) {
+      toast.error("You don't have permission to create tasks in this project");
+      return;
+    }
 
-  if (creating) {
-    toast.error("Please wait, already creating a task");
-    return;
-  }
+    if (creating) {
+      toast.error("Please wait, already creating a task");
+      return;
+    }
 
-  setEditingTodo(null);
-  setShowForm(true);
-}, [canEdit, creating]);
+    setEditingTodo(null);
+    setShowForm(true);
+  }, [canEdit, creating]);
 
-  // Optimize fetchProjectData with useCallback to prevent unnecessary re-renders
   const fetchProjectData = useCallback(async () => {
     try {
       setLoading(true);
@@ -113,7 +100,6 @@ const handleNewTaskClick = useCallback(() => {
 
       // Only include todos that belong to this project
       const projectTodos = (projectData.todos || []).filter((todo) => {
-        // Handle both populated and non-populated project references
         const todoProjectId = todo.project?._id || todo.project;
         return todoProjectId === projectId;
       });
@@ -168,26 +154,28 @@ const handleNewTaskClick = useCallback(() => {
       setActiveUsers(data.activeUsers || []);
     });
 
-    // ✅ IMPROVED: Handle todo creation with duplicate prevention
+    // ✅ FIXED: Single todo creation handler
     socket.on("todoCreated", (data) => {
-      console.log("🆕 Todo created via socket:", data.todo);
+      console.log("🆕 Todo created via socket:", data);
+
+      // Only process if it's for this project and not from current user
       if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
         setTodos((prev) => {
-          // ✅ PREVENT DUPLICATES
+          // Prevent duplicates by ID
           const exists = prev.find((todo) => todo._id === data.todo._id);
           if (exists) {
             console.log("Todo already exists, not adding duplicate");
             return prev;
           }
 
-          // ✅ ALSO CHECK FOR SIMILAR TASKS
+          // Also check for similar tasks (extra safety)
           const similarExists = prev.find(
             (todo) =>
               todo.task.toLowerCase() === data.todo.task.toLowerCase() &&
               todo.user === data.todo.user &&
               Math.abs(
                 new Date(todo.createdAt) - new Date(data.todo.createdAt)
-              ) < 5000 // Within 5 seconds
+              ) < 5000
           );
 
           if (similarExists) {
@@ -195,22 +183,26 @@ const handleNewTaskClick = useCallback(() => {
             return prev;
           }
 
-          return [data.todo, ...prev];
+          // ✅ ENSURE TODO HAS PROJECT ASSOCIATION
+          const todoWithProject = {
+            ...data.todo,
+            project: data.projectId, // Ensure project is set
+          };
+
+          return [todoWithProject, ...prev];
         });
 
-        toast.success(
-          `New task added by ${data.todo.createdBy || "another user"}`,
-          {
-            icon: "✨",
-            duration: 3000,
-          }
-        );
+        toast.success(`New task added by ${data.createdBy || "another user"}`, {
+          icon: "✨",
+          duration: 3000,
+        });
       }
     });
 
-    // ✅ IMPROVED: Handle todo updates with validation
+    // ✅ FIXED: Single todo update handler
     socket.on("todoUpdated", (data) => {
-      console.log("📝 Todo updated via socket:", data.todo);
+      console.log("📝 Todo updated via socket:", data);
+
       if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
         setTodos((prev) => {
           const todoExists = prev.find((todo) => todo._id === data.todo._id);
@@ -220,68 +212,9 @@ const handleNewTaskClick = useCallback(() => {
           }
 
           return prev.map((todo) =>
-            todo._id === data.todo._id ? { ...todo, ...data.todo } : todo
-          );
-        });
-
-        toast.success("Task updated by another user", {
-          icon: "🔄",
-          duration: 2000,
-        });
-      }
-    }); // ✅ IMPROVED: Handle todo creation with duplicate prevention
-    socket.on("todoCreated", (data) => {
-      console.log("🆕 Todo created via socket:", data.todo);
-      if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
-        setTodos((prev) => {
-          // ✅ PREVENT DUPLICATES
-          const exists = prev.find((todo) => todo._id === data.todo._id);
-          if (exists) {
-            console.log("Todo already exists, not adding duplicate");
-            return prev;
-          }
-
-          // ✅ ALSO CHECK FOR SIMILAR TASKS
-          const similarExists = prev.find(
-            (todo) =>
-              todo.task.toLowerCase() === data.todo.task.toLowerCase() &&
-              todo.user === data.todo.user &&
-              Math.abs(
-                new Date(todo.createdAt) - new Date(data.todo.createdAt)
-              ) < 5000 // Within 5 seconds
-          );
-
-          if (similarExists) {
-            console.log("Similar todo already exists, not adding duplicate");
-            return prev;
-          }
-
-          return [data.todo, ...prev];
-        });
-
-        toast.success(
-          `New task added by ${data.todo.createdBy || "another user"}`,
-          {
-            icon: "✨",
-            duration: 3000,
-          }
-        );
-      }
-    });
-
-    // ✅ IMPROVED: Handle todo updates with validation
-    socket.on("todoUpdated", (data) => {
-      console.log("📝 Todo updated via socket:", data.todo);
-      if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
-        setTodos((prev) => {
-          const todoExists = prev.find((todo) => todo._id === data.todo._id);
-          if (!todoExists) {
-            console.log("Todo not found for update, ignoring");
-            return prev;
-          }
-
-          return prev.map((todo) =>
-            todo._id === data.todo._id ? { ...todo, ...data.todo } : todo
+            todo._id === data.todo._id
+              ? { ...todo, ...data.todo, project: data.projectId } // Ensure project is maintained
+              : todo
           );
         });
 
@@ -325,7 +258,6 @@ const handleNewTaskClick = useCallback(() => {
       }
     });
 
-    // Listen for project errors
     socket.on("projectError", (error) => {
       console.error("❌ Project socket error:", error);
       toast.error(error.message || "Connection error");
@@ -343,7 +275,6 @@ const handleNewTaskClick = useCallback(() => {
       socket.off("todoToggled");
       socket.off("projectError");
 
-      // Leave project room
       if (socket.isConnected) {
         socket.emit("leaveProject", {
           projectId,
@@ -353,8 +284,7 @@ const handleNewTaskClick = useCallback(() => {
     };
   }, [socket.isConnected, project, projectId, currentUser?.uid]);
 
-  // Handle form submission for create/update (modified for project-specific API)
-  // ✅ IMPROVED: Handle form submission with duplicate prevention
+  // ✅ IMPROVED: Enhanced form submission with better project association
   const handleFormSubmit = useCallback(
     async (taskData, originalTodo) => {
       if (!currentUser?.uid) {
@@ -369,7 +299,6 @@ const handleNewTaskClick = useCallback(() => {
         return;
       }
 
-      // ✅ PREVENT MULTIPLE SUBMISSIONS
       if (creating) {
         console.log(
           "Already creating/updating todo, ignoring duplicate request"
@@ -378,7 +307,7 @@ const handleNewTaskClick = useCallback(() => {
       }
 
       try {
-        setCreating(true); // ✅ Prevent double submissions
+        setCreating(true);
 
         if (originalTodo) {
           // Update existing todo
@@ -387,19 +316,23 @@ const handleNewTaskClick = useCallback(() => {
             {
               ...taskData,
               user: currentUser.uid,
+              project: projectId, // ✅ Explicitly set project
             }
           );
 
+          const updatedTodo = response.data.data;
+
           setTodos((prevTodos) =>
             prevTodos.map((task) =>
-              task._id === originalTodo._id ? response.data.data : task
+              task._id === originalTodo._id ? updatedTodo : task
             )
           );
+
           setEditingTodo(null);
           setShowForm(false);
           toast.success("Task updated successfully!");
         } else {
-          // ✅ CHECK FOR DUPLICATES BEFORE CREATING
+          // Check for duplicates before creating
           const trimmedTask = taskData.task.trim().toLowerCase();
           const duplicateExists = todos.some(
             (todo) =>
@@ -413,18 +346,20 @@ const handleNewTaskClick = useCallback(() => {
             return;
           }
 
-          // Create new todo
+          // ✅ Create new todo with explicit project association
           const response = await API.post(
             `/projects/${projectId}/todos/create`,
             {
               ...taskData,
               user: currentUser.uid,
+              project: projectId, // ✅ Explicitly set project
             }
           );
 
           const createdTodo = response.data.data;
+
           setTodos((prevTodos) => {
-            // ✅ DOUBLE CHECK FOR DUPLICATES IN STATE
+            // Double check for duplicates in state
             const exists = prevTodos.find(
               (todo) => todo._id === createdTodo._id
             );
@@ -434,25 +369,26 @@ const handleNewTaskClick = useCallback(() => {
             }
             return [createdTodo, ...prevTodos];
           });
+
           setShowForm(false);
           toast.success("Task created successfully!");
         }
       } catch (error) {
         console.error("Error saving todo:", error);
 
-        // ✅ HANDLE SPECIFIC DUPLICATE ERROR
         if (error.response?.data?.error === "DUPLICATE_TODO") {
           toast.error("This task already exists in the project");
         } else {
           toast.error("Failed to save task. Please try again.");
         }
       } finally {
-        setCreating(false); // ✅ Reset creating state
+        setCreating(false);
       }
     },
     [currentUser?.uid, canEdit, projectId, creating, todos]
   );
 
+  // Rest of your component methods remain the same...
   const handleToggleComplete = useCallback(
     async (id, isChecked) => {
       if (!canEdit) {
@@ -463,7 +399,6 @@ const handleNewTaskClick = useCallback(() => {
       }
 
       try {
-        // Use project-specific toggle endpoint
         const response = await API.patch(
           `/projects/${projectId}/todos/${id}/toggle`,
           {
@@ -485,21 +420,17 @@ const handleNewTaskClick = useCallback(() => {
       } catch (error) {
         console.error("Error toggling todo:", error);
         toast.error("Failed to update task status");
-
-        // Revert on error
         fetchProjectData();
       }
     },
     [projectId, canEdit, fetchProjectData]
   );
 
-  // Handle cancel editing
   const handleCancelEdit = useCallback(() => {
     setEditingTodo(null);
     setShowForm(false);
   }, []);
 
-  // Handle edit button click
   const handleEditClick = useCallback(
     (task) => {
       if (!canEdit) {
@@ -512,7 +443,6 @@ const handleNewTaskClick = useCallback(() => {
     [canEdit]
   );
 
-  // Handle task deletion (modified for project-specific API)
   const handleDelete = useCallback(
     async (id) => {
       if (!canEdit) {
@@ -528,7 +458,6 @@ const handleNewTaskClick = useCallback(() => {
         // Optimistically update UI
         setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
 
-        // Make API call
         await API.delete(`/projects/${projectId}/todos/${id}`);
 
         toast.success(`Task "${todoToDelete?.task}" removed from project`, {
@@ -538,17 +467,12 @@ const handleNewTaskClick = useCallback(() => {
       } catch (error) {
         console.error("Error deleting todo:", error);
         toast.error("Failed to remove task from project");
-
-        // Revert on error
         fetchProjectData();
       }
     },
     [todos, projectId, canEdit, fetchProjectData]
   );
 
-  // Handle task completion toggle
-
-  // Handle search input change
   const handleSearchChange = useCallback((value) => {
     setSearchTerm(value);
   }, []);
