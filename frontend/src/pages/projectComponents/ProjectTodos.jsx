@@ -225,11 +225,38 @@ const ProjectTodos = () => {
       }
     });
 
+    // ✅ IMPROVED: Socket handlers with better error handling and state management
     socket.on("todoDeleted", (data) => {
-      console.log("🗑️ Todo deleted via socket:", data.todoId);
+      console.log("🗑️ Todo deleted via socket:", data);
       if (data.projectId === projectId) {
-        setTodos((prev) => prev.filter((todo) => todo._id !== data.todoId));
-        toast.success("Task removed by another user", {
+        setTodos((prev) => {
+          const filteredTodos = prev.filter((todo) => todo._id !== data.todoId);
+          console.log(
+            `Removed todo ${data.todoId}, remaining: ${filteredTodos.length}`
+          );
+          return filteredTodos;
+        });
+
+        toast.success("Task deleted by another user", {
+          icon: "🗑️",
+          duration: 2000,
+        });
+      }
+    });
+
+    // ✅ IMPROVED: Socket handlers with better error handling and state management
+    socket.on("todoDeleted", (data) => {
+      console.log("🗑️ Todo deleted via socket:", data);
+      if (data.projectId === projectId) {
+        setTodos((prev) => {
+          const filteredTodos = prev.filter((todo) => todo._id !== data.todoId);
+          console.log(
+            `Removed todo ${data.todoId}, remaining: ${filteredTodos.length}`
+          );
+          return filteredTodos;
+        });
+
+        toast.success("Task deleted by another user", {
           icon: "🗑️",
           duration: 2000,
         });
@@ -239,13 +266,21 @@ const ProjectTodos = () => {
     socket.on("todoToggled", (data) => {
       console.log("✅ Todo toggled via socket:", data);
       if (data.projectId === projectId) {
-        setTodos((prev) =>
-          prev.map((todo) =>
+        setTodos((prev) => {
+          const updatedTodos = prev.map((todo) =>
             todo._id === data.todoId
-              ? { ...todo, isCompleted: data.isCompleted }
+              ? {
+                  ...todo,
+                  isCompleted: data.isCompleted,
+                  updatedAt: new Date(),
+                }
               : todo
-          )
-        );
+          );
+
+          console.log(`Toggled todo ${data.todoId} to ${data.isCompleted}`);
+          return updatedTodos;
+        });
+
         toast.success(
           data.isCompleted
             ? "Task completed by another user"
@@ -399,6 +434,18 @@ const ProjectTodos = () => {
       }
 
       try {
+        console.log("🔄 Toggling todo:", { id, isChecked });
+
+        // Optimistically update UI first
+        setTodos((prevTasks) =>
+          prevTasks.map((task) =>
+            task._id === id
+              ? { ...task, isCompleted: isChecked, updatedAt: new Date() }
+              : task
+          )
+        );
+
+        // Make API call
         const response = await API.patch(
           `/projects/${projectId}/todos/${id}/toggle`,
           {
@@ -406,6 +453,9 @@ const ProjectTodos = () => {
           }
         );
 
+        console.log("✅ Todo toggled successfully via API");
+
+        // Update with server response to ensure consistency
         setTodos((prevTasks) =>
           prevTasks.map((task) => (task._id === id ? response.data.data : task))
         );
@@ -418,13 +468,97 @@ const ProjectTodos = () => {
           }
         );
       } catch (error) {
-        console.error("Error toggling todo:", error);
+        console.error("❌ Error toggling todo:", error);
+
+        // Revert optimistic update on error
+        setTodos((prevTasks) =>
+          prevTasks.map((task) =>
+            task._id === id
+              ? { ...task, isCompleted: !isChecked } // Revert
+              : task
+          )
+        );
+
         toast.error("Failed to update task status");
+
+        // Optionally refresh data
         fetchProjectData();
       }
     },
     [projectId, canEdit, fetchProjectData]
   );
+
+  const handleDelete = useCallback(
+  async (id) => {
+    if (!canEdit) {
+      toast.error(
+        "You don't have permission to delete tasks in this project"
+      );
+      return;
+    }
+
+    const todoToDelete = todos.find((t) => t._id === id);
+    if (!todoToDelete) {
+      toast.error("Task not found");
+      return;
+    }
+
+    try {
+      console.log('🗑️ Deleting todo:', id);
+
+      // Show loading state
+      const loadingToast = toast.loading("Deleting task...");
+
+      // Make API call to delete from database
+      const response = await API.delete(`/projects/${projectId}/todos/${id}`);
+
+      // Dismiss loading toast
+      toast.dismiss(loadingToast);
+
+      console.log('✅ Todo deleted successfully from API:', response.data);
+
+      // Update local state immediately after successful API call
+      setTodos((prevTasks) => {
+        const filteredTasks = prevTasks.filter((task) => task._id !== id);
+        console.log(`Local state updated: removed todo ${id}, remaining: ${filteredTasks.length}`);
+        return filteredTasks;
+      });
+
+      toast.success(`Task "${todoToDelete.task}" deleted successfully`, {
+        icon: "🗑️",
+        duration: 3000,
+      });
+
+    } catch (error) {
+      console.error("❌ Error deleting todo:", error);
+      
+      // Dismiss any loading toast
+      toast.dismiss();
+      
+      // Show specific error message based on response
+      if (error.response?.status === 404) {
+        toast.error("Task not found or already deleted");
+        // Remove from local state if it doesn't exist on server
+        setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
+      } else if (error.response?.status === 403) {
+        toast.error("You don't have permission to delete this task");
+      } else if (error.response?.status === 500) {
+        toast.error("Server error. Please try again in a moment.");
+      } else if (error.code === 'NETWORK_ERROR' || !error.response) {
+        toast.error("Network error. Please check your connection.");
+      } else {
+        toast.error("Failed to delete task. Please try again.");
+      }
+      
+      // Only refresh data if it's not a 404 (task not found)
+      if (error.response?.status !== 404) {
+        console.log("Refreshing project data due to delete error...");
+        fetchProjectData();
+      }
+    }
+  },
+  [todos, projectId, canEdit, fetchProjectData]
+);
 
   const handleCancelEdit = useCallback(() => {
     setEditingTodo(null);
@@ -441,36 +575,6 @@ const ProjectTodos = () => {
       setShowForm(true);
     },
     [canEdit]
-  );
-
-  const handleDelete = useCallback(
-    async (id) => {
-      if (!canEdit) {
-        toast.error(
-          "You don't have permission to delete tasks in this project"
-        );
-        return;
-      }
-
-      try {
-        const todoToDelete = todos.find((t) => t._id === id);
-
-        // Optimistically update UI
-        setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
-
-        await API.delete(`/projects/${projectId}/todos/${id}`);
-
-        toast.success(`Task "${todoToDelete?.task}" removed from project`, {
-          icon: "🗑️",
-          duration: 3000,
-        });
-      } catch (error) {
-        console.error("Error deleting todo:", error);
-        toast.error("Failed to remove task from project");
-        fetchProjectData();
-      }
-    },
-    [todos, projectId, canEdit, fetchProjectData]
   );
 
   const handleSearchChange = useCallback((value) => {
