@@ -481,31 +481,32 @@ const deleteProject = async (req, res) => {
 // ✅ FIXED: createTodoInProject function with proper project association
 
 const createTodoInProject = async (req, res) => {
-  let session = null;
+  const { projectId } = req.params;
+  const { task, description, priority, dueDate, list, clientId } = req.body;
+  const userId = req.user._id;
+  
+  const maxRetries = 3;
+  let attempt = 0;
+
+  console.log('🚀 Creating todo in project:', { projectId, userId, task, clientId });
+
+  // Validate required fields
+  if (!task || !task.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "Task is required",
+      error: "MISSING_TASK"
+    });
+  }
 
   try {
-    const { projectId } = req.params;
-    const { task, description, priority, dueDate, list } = req.body;
-    const userId = req.user._id;
-
-    console.log("🚀 Creating todo in project:", { projectId, userId, task });
-
-    // Validate required fields
-    if (!task || !task.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Task is required",
-        error: "MISSING_TASK",
-      });
-    }
-
     // First, verify project exists and user has permissions (outside transaction)
     const project = await Project.findById(projectId);
     if (!project) {
       return res.status(404).json({
         success: false,
         message: "Project not found",
-        error: "PROJECT_NOT_FOUND",
+        error: "PROJECT_NOT_FOUND"
       });
     }
 
@@ -514,172 +515,194 @@ const createTodoInProject = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: "Insufficient permissions to create todos in this project",
-        error: "INSUFFICIENT_PERMISSIONS",
+        error: "INSUFFICIENT_PERMISSIONS"
       });
     }
 
-    // Check for duplicate todos (outside transaction for better performance)
+    // ✅ IMPROVED: Better duplicate checking for multi-user scenarios
+    // Only check for duplicates from the SAME USER, not all users in the project
     const existingTodo = await Todo.findOne({
       task: task.trim(),
       project: projectId,
-      user: userId,
-      isCompleted: false,
+      user: userId, // Same user
+      isCompleted: false
     });
 
     if (existingTodo) {
       return res.status(409).json({
         success: false,
-        message: "A similar task already exists in this project",
-        error: "DUPLICATE_TODO",
+        message: "You already have a similar active task in this project",
+        error: "DUPLICATE_TODO"
       });
     }
 
-    // Try with transaction first
-    try {
-      session = await mongoose.startSession();
-
-      const result = await session.withTransaction(
-        async () => {
-          // Create todo with explicit project association
+    // ✅ RETRY LOGIC: Handle write conflicts for concurrent requests
+    while (attempt < maxRetries) {
+      let session = null;
+      
+      try {
+        attempt++;
+        console.log(`🔄 Create attempt ${attempt}/${maxRetries}`);
+        
+        session = await mongoose.startSession();
+        
+        const result = await session.withTransaction(async () => {
+          // Create todo with explicit project association and clientId
           const newTodo = new Todo({
             task: task.trim(),
-            description: description || "",
-            priority: priority || "medium",
+            description: description || '',
+            priority: priority || 'medium',
             dueDate: dueDate || null,
-            list: list || "General",
+            list: list || 'General',
             user: userId,
             project: projectId,
+            clientId: clientId || null, // Store clientId for duplicate prevention
             isCompleted: false,
             createdAt: new Date(),
-            updatedAt: new Date(),
+            updatedAt: new Date()
           });
 
           // Save the todo
           const savedTodo = await newTodo.save({ session });
-
+          
           // Add todo to project's todos array
           await Project.findByIdAndUpdate(
             projectId,
-            {
+            { 
               $addToSet: { todos: savedTodo._id },
-              updatedAt: new Date(),
+              updatedAt: new Date()
             },
             { session, new: true }
           );
 
           return savedTodo;
-        },
-        {
-          // Transaction options
-          readPreference: "primary",
-          readConcern: { level: "local" },
-          writeConcern: { w: "majority" },
-          maxCommitTimeMS: 10000,
+        }, {
+          // Transaction options with better retry settings
+          readPreference: 'primary',
+          readConcern: { level: 'local' },
+          writeConcern: { w: 'majority', j: true },
+          maxCommitTimeMS: 10000
+        });
+
+        console.log('✅ Todo created successfully with transaction:', result._id);
+
+        // Populate the todo with user info for response and socket emission
+        const populatedTodo = await Todo.findById(result._id)
+          .populate('user', 'displayName email');
+
+        // Update project stats asynchronously (don't wait for it)
+        project.updateStats().catch(err => 
+          console.error('Failed to update project stats:', err)
+        );
+
+        // ✅ IMPROVED: Socket emission with user info
+        const socketData = {
+          ...populatedTodo.toObject(),
+          createdBy: populatedTodo.user?.displayName || populatedTodo.user?.email || 'Anonymous'
+        };
+
+        // Emit to all users in the project room (including the creator for other tabs)
+        console.log('📡 Emitting todoCreated to project room');
+        emitTodoCreated(projectId, socketData);
+
+        // Return success response
+        return res.status(201).json({
+          success: true,
+          message: "Todo created successfully in project",
+          data: populatedTodo,
+        });
+
+      } catch (transactionError) {
+        console.warn(`⚠️ Transaction attempt ${attempt} failed:`, transactionError.message);
+        
+        // Check if it's a retryable error
+        const isRetryableError = 
+          transactionError.code === 112 || // WriteConflict
+          transactionError.code === 11000 || // DuplicateKey
+          transactionError.errorLabels?.includes('TransientTransactionError') ||
+          transactionError.message?.includes('Write conflict');
+
+        if (isRetryableError && attempt < maxRetries) {
+          console.log(`⏳ Retrying create operation in ${attempt * 1000}ms...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+          continue;
         }
-      );
 
-      console.log("✅ Todo created successfully with transaction:", result._id);
+        // If not retryable or exhausted retries, fall back to non-transaction approach
+        if (attempt === maxRetries) {
+          console.warn('⚠️ All transaction attempts failed, falling back to non-transaction approach');
+          
+          // Fallback: Create without transaction
+          const newTodo = new Todo({
+            task: task.trim(),
+            description: description || '',
+            priority: priority || 'medium',
+            dueDate: dueDate || null,
+            list: list || 'General',
+            user: userId,
+            project: projectId,
+            clientId: clientId || null,
+            isCompleted: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
 
-      // Populate the todo with user info for response and socket emission
-      const populatedTodo = await Todo.findById(result._id).populate(
-        "user",
-        "displayName email"
-      );
+          // Save the todo (without transaction)
+          const savedTodo = await newTodo.save();
+          
+          // Add todo to project's todos array (without transaction)
+          await Project.findByIdAndUpdate(
+            projectId,
+            { 
+              $addToSet: { todos: savedTodo._id },
+              updatedAt: new Date()
+            },
+            { new: true }
+          );
 
-      // Update project stats asynchronously (don't wait for it)
-      project
-        .updateStats()
-        .catch((err) => console.error("Failed to update project stats:", err));
+          console.log('✅ Todo created successfully without transaction:', savedTodo._id);
 
-      // Emit socket event with populated data
-      const socketData = {
-        ...populatedTodo.toObject(),
-        createdBy:
-          populatedTodo.user?.displayName ||
-          populatedTodo.user?.email ||
-          "Anonymous",
-      };
+          // Populate the todo with user info
+          const populatedTodo = await Todo.findById(savedTodo._id)
+            .populate('user', 'displayName email');
 
-      // Emit to all users in the project room
-      emitTodoCreated(projectId, socketData);
+          // Update project stats asynchronously
+          project.updateStats().catch(err => 
+            console.error('Failed to update project stats:', err)
+          );
 
-      // Return success response
-      return res.status(201).json({
-        success: true,
-        message: "Todo created successfully in project",
-        data: populatedTodo,
-      });
-    } catch (transactionError) {
-      console.warn(
-        "⚠️ Transaction failed, falling back to non-transaction approach:",
-        transactionError.message
-      );
+          // Emit socket event
+          const socketData = {
+            ...populatedTodo.toObject(),
+            createdBy: populatedTodo.user?.displayName || populatedTodo.user?.email || 'Anonymous'
+          };
 
-      // Fallback: Create without transaction
-      const newTodo = new Todo({
-        task: task.trim(),
-        description: description || "",
-        priority: priority || "medium",
-        dueDate: dueDate || null,
-        list: list || "General",
-        user: userId,
-        project: projectId,
-        isCompleted: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+          emitTodoCreated(projectId, socketData);
 
-      // Save the todo (without transaction)
-      const savedTodo = await newTodo.save();
-
-      // Add todo to project's todos array (without transaction)
-      await Project.findByIdAndUpdate(
-        projectId,
-        {
-          $addToSet: { todos: savedTodo._id },
-          updatedAt: new Date(),
-        },
-        { new: true }
-      );
-
-      console.log(
-        "✅ Todo created successfully without transaction:",
-        savedTodo._id
-      );
-
-      // Populate the todo with user info
-      const populatedTodo = await Todo.findById(savedTodo._id).populate(
-        "user",
-        "displayName email"
-      );
-
-      // Update project stats asynchronously
-      project
-        .updateStats()
-        .catch((err) => console.error("Failed to update project stats:", err));
-
-      // Emit socket event
-      const socketData = {
-        ...populatedTodo.toObject(),
-        createdBy:
-          populatedTodo.user?.displayName ||
-          populatedTodo.user?.email ||
-          "Anonymous",
-      };
-
-      emitTodoCreated(projectId, socketData);
-
-      return res.status(201).json({
-        success: true,
-        message: "Todo created successfully in project",
-        data: populatedTodo,
-      });
+          return res.status(201).json({
+            success: true,
+            message: "Todo created successfully in project",
+            data: populatedTodo,
+          });
+        }
+        
+      } finally {
+        // Always end session if it exists
+        if (session) {
+          try {
+            await session.endSession();
+          } catch (sessionError) {
+            console.error('Error ending session:', sessionError);
+          }
+        }
+      }
     }
-  } catch (error) {
-    console.error("❌ Error creating todo in project:", error);
 
+  } catch (error) {
+    console.error('❌ Error creating todo in project:', error);
+    
     // Handle specific error types
-    if (error.name === "ValidationError") {
+    if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
         message: "Validation error",
@@ -687,7 +710,7 @@ const createTodoInProject = async (req, res) => {
         details: Object.keys(error.errors).reduce((acc, key) => {
           acc[key] = error.errors[key].message;
           return acc;
-        }, {}),
+        }, {})
       });
     }
 
@@ -695,7 +718,7 @@ const createTodoInProject = async (req, res) => {
       return res.status(409).json({
         success: false,
         message: "Duplicate task detected",
-        error: "DUPLICATE_TODO",
+        error: "DUPLICATE_TODO"
       });
     }
 
@@ -703,20 +726,8 @@ const createTodoInProject = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error while creating todo",
-      error:
-        process.env.NODE_ENV === "development"
-          ? error.message
-          : "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
     });
-  } finally {
-    // Always end session if it exists
-    if (session) {
-      try {
-        await session.endSession();
-      } catch (sessionError) {
-        console.error("Error ending session:", sessionError);
-      }
-    }
   }
 };
 

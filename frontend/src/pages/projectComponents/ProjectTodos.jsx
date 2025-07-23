@@ -155,47 +155,58 @@ const ProjectTodos = () => {
     });
 
     // ✅ FIXED: Single todo creation handler
+    // ✅ IMPROVED: Better socket handler for multi-user todo creation
     socket.on("todoCreated", (data) => {
       console.log("🆕 Todo created via socket:", data);
 
-      // Only process if it's for this project and not from current user
-      if (data.projectId === projectId && data.todo.user !== currentUser.uid) {
-        setTodos((prev) => {
-          // Prevent duplicates by ID
-          const exists = prev.find((todo) => todo._id === data.todo._id);
-          if (exists) {
-            console.log("Todo already exists, not adding duplicate");
-            return prev;
-          }
+      // Only process if it's for this project
+      if (data.projectId === projectId) {
+        // ✅ IMPORTANT: Process todos from OTHER users, but not from current user
+        // (current user's todos are handled by the API response)
+        if (data.todo.user !== currentUser.uid) {
+          console.log("Processing todo from another user:", data.todo.user);
 
-          // Also check for similar tasks (extra safety)
-          const similarExists = prev.find(
-            (todo) =>
-              todo.task.toLowerCase() === data.todo.task.toLowerCase() &&
-              todo.user === data.todo.user &&
-              Math.abs(
-                new Date(todo.createdAt) - new Date(data.todo.createdAt)
-              ) < 5000
+          setTodos((prev) => {
+            // Prevent duplicates by ID
+            const exists = prev.find((todo) => todo._id === data.todo._id);
+            if (exists) {
+              console.log("Todo already exists, not adding duplicate");
+              return prev;
+            }
+
+            // Additional safety check by clientId if available
+            if (data.todo.clientId) {
+              const clientIdExists = prev.find(
+                (todo) => todo.clientId === data.todo.clientId
+              );
+              if (clientIdExists) {
+                console.log("Todo with same clientId already exists");
+                return prev;
+              }
+            }
+
+            // ✅ ENSURE TODO HAS PROJECT ASSOCIATION
+            const todoWithProject = {
+              ...data.todo,
+              project: data.projectId,
+            };
+
+            console.log("Adding todo from another user to state");
+            return [todoWithProject, ...prev];
+          });
+
+          toast.success(
+            `New task added by ${data.createdBy || "another user"}`,
+            {
+              icon: "✨",
+              duration: 3000,
+            }
           );
-
-          if (similarExists) {
-            console.log("Similar todo already exists, not adding duplicate");
-            return prev;
-          }
-
-          // ✅ ENSURE TODO HAS PROJECT ASSOCIATION
-          const todoWithProject = {
-            ...data.todo,
-            project: data.projectId, // Ensure project is set
-          };
-
-          return [todoWithProject, ...prev];
-        });
-
-        toast.success(`New task added by ${data.createdBy || "another user"}`, {
-          icon: "✨",
-          duration: 3000,
-        });
+        } else {
+          console.log(
+            "Ignoring todo created by current user (handled by API response)"
+          );
+        }
       }
     });
 
@@ -320,6 +331,7 @@ const ProjectTodos = () => {
   }, [socket.isConnected, project, projectId, currentUser?.uid]);
 
   // ✅ IMPROVED: Enhanced form submission with better project association
+  // ✅ IMPROVED: Enhanced form submission with better multi-user support
   const handleFormSubmit = useCallback(
     async (taskData, originalTodo) => {
       if (!currentUser?.uid) {
@@ -346,12 +358,14 @@ const ProjectTodos = () => {
 
         if (originalTodo) {
           // Update existing todo
+          console.log("Updating existing todo:", originalTodo._id);
+
           const response = await API.put(
             `/projects/${projectId}/todos/${originalTodo._id}`,
             {
               ...taskData,
               user: currentUser.uid,
-              project: projectId, // ✅ Explicitly set project
+              project: projectId,
             }
           );
 
@@ -367,41 +381,68 @@ const ProjectTodos = () => {
           setShowForm(false);
           toast.success("Task updated successfully!");
         } else {
-          // Check for duplicates before creating
+          // ✅ IMPROVED: Better duplicate checking for multi-user scenarios
           const trimmedTask = taskData.task.trim().toLowerCase();
+
+          // Only check for duplicates from the CURRENT USER, not all users
           const duplicateExists = todos.some(
             (todo) =>
               todo.task.toLowerCase() === trimmedTask &&
-              !todo.isCompleted &&
-              todo.user === currentUser.uid
+              todo.user === currentUser.uid && // Only check current user's todos
+              !todo.isCompleted
           );
 
           if (duplicateExists) {
-            toast.error("A similar task already exists in this project");
+            toast.error(
+              "You already have a similar active task in this project"
+            );
             return;
           }
 
-          // ✅ Create new todo with explicit project association
+          console.log("Creating new todo for user:", currentUser.uid);
+
+          // ✅ Create new todo with unique identifier to prevent race conditions
+          const createData = {
+            ...taskData,
+            user: currentUser.uid,
+            project: projectId,
+            clientId: `${currentUser.uid}-${Date.now()}-${Math.random()
+              .toString(36)
+              .substr(2, 9)}`, // Unique client ID
+          };
+
           const response = await API.post(
             `/projects/${projectId}/todos/create`,
-            {
-              ...taskData,
-              user: currentUser.uid,
-              project: projectId, // ✅ Explicitly set project
-            }
+            createData
           );
 
           const createdTodo = response.data.data;
+          console.log("✅ Todo created successfully:", createdTodo._id);
 
+          // ✅ IMPROVED: More robust state update with race condition prevention
           setTodos((prevTodos) => {
-            // Double check for duplicates in state
+            // Check if todo already exists (could happen due to socket events)
             const exists = prevTodos.find(
               (todo) => todo._id === createdTodo._id
             );
+
             if (exists) {
-              console.log("Todo already exists in state, not adding duplicate");
+              console.log("Todo already exists in state from socket event");
               return prevTodos;
             }
+
+            // Also check by clientId if available (extra safety)
+            if (createdTodo.clientId) {
+              const clientIdExists = prevTodos.find(
+                (todo) => todo.clientId === createdTodo.clientId
+              );
+              if (clientIdExists) {
+                console.log("Todo with same clientId already exists");
+                return prevTodos;
+              }
+            }
+
+            console.log("Adding new todo to state");
             return [createdTodo, ...prevTodos];
           });
 
@@ -413,6 +454,10 @@ const ProjectTodos = () => {
 
         if (error.response?.data?.error === "DUPLICATE_TODO") {
           toast.error("This task already exists in the project");
+        } else if (error.response?.status === 429) {
+          toast.error("Too many requests. Please wait a moment and try again.");
+        } else if (error.response?.status === 500) {
+          toast.error("Server error. Please try again in a moment.");
         } else {
           toast.error("Failed to save task. Please try again.");
         }
@@ -489,76 +534,77 @@ const ProjectTodos = () => {
   );
 
   const handleDelete = useCallback(
-  async (id) => {
-    if (!canEdit) {
-      toast.error(
-        "You don't have permission to delete tasks in this project"
-      );
-      return;
-    }
-
-    const todoToDelete = todos.find((t) => t._id === id);
-    if (!todoToDelete) {
-      toast.error("Task not found");
-      return;
-    }
-
-    try {
-      console.log('🗑️ Deleting todo:', id);
-
-      // Show loading state
-      const loadingToast = toast.loading("Deleting task...");
-
-      // Make API call to delete from database
-      const response = await API.delete(`/projects/${projectId}/todos/${id}`);
-
-      // Dismiss loading toast
-      toast.dismiss(loadingToast);
-
-      console.log('✅ Todo deleted successfully from API:', response.data);
-
-      // Update local state immediately after successful API call
-      setTodos((prevTasks) => {
-        const filteredTasks = prevTasks.filter((task) => task._id !== id);
-        console.log(`Local state updated: removed todo ${id}, remaining: ${filteredTasks.length}`);
-        return filteredTasks;
-      });
-
-      toast.success(`Task "${todoToDelete.task}" deleted successfully`, {
-        icon: "🗑️",
-        duration: 3000,
-      });
-
-    } catch (error) {
-      console.error("❌ Error deleting todo:", error);
-      
-      // Dismiss any loading toast
-      toast.dismiss();
-      
-      // Show specific error message based on response
-      if (error.response?.status === 404) {
-        toast.error("Task not found or already deleted");
-        // Remove from local state if it doesn't exist on server
-        setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
-      } else if (error.response?.status === 403) {
-        toast.error("You don't have permission to delete this task");
-      } else if (error.response?.status === 500) {
-        toast.error("Server error. Please try again in a moment.");
-      } else if (error.code === 'NETWORK_ERROR' || !error.response) {
-        toast.error("Network error. Please check your connection.");
-      } else {
-        toast.error("Failed to delete task. Please try again.");
+    async (id) => {
+      if (!canEdit) {
+        toast.error(
+          "You don't have permission to delete tasks in this project"
+        );
+        return;
       }
-      
-      // Only refresh data if it's not a 404 (task not found)
-      if (error.response?.status !== 404) {
-        console.log("Refreshing project data due to delete error...");
-        fetchProjectData();
+
+      const todoToDelete = todos.find((t) => t._id === id);
+      if (!todoToDelete) {
+        toast.error("Task not found");
+        return;
       }
-    }
-  },
-  [todos, projectId, canEdit, fetchProjectData]
-);
+
+      try {
+        console.log("🗑️ Deleting todo:", id);
+
+        // Show loading state
+        const loadingToast = toast.loading("Deleting task...");
+
+        // Make API call to delete from database
+        const response = await API.delete(`/projects/${projectId}/todos/${id}`);
+
+        // Dismiss loading toast
+        toast.dismiss(loadingToast);
+
+        console.log("✅ Todo deleted successfully from API:", response.data);
+
+        // Update local state immediately after successful API call
+        setTodos((prevTasks) => {
+          const filteredTasks = prevTasks.filter((task) => task._id !== id);
+          console.log(
+            `Local state updated: removed todo ${id}, remaining: ${filteredTasks.length}`
+          );
+          return filteredTasks;
+        });
+
+        toast.success(`Task "${todoToDelete.task}" deleted successfully`, {
+          icon: "🗑️",
+          duration: 3000,
+        });
+      } catch (error) {
+        console.error("❌ Error deleting todo:", error);
+
+        // Dismiss any loading toast
+        toast.dismiss();
+
+        // Show specific error message based on response
+        if (error.response?.status === 404) {
+          toast.error("Task not found or already deleted");
+          // Remove from local state if it doesn't exist on server
+          setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
+        } else if (error.response?.status === 403) {
+          toast.error("You don't have permission to delete this task");
+        } else if (error.response?.status === 500) {
+          toast.error("Server error. Please try again in a moment.");
+        } else if (error.code === "NETWORK_ERROR" || !error.response) {
+          toast.error("Network error. Please check your connection.");
+        } else {
+          toast.error("Failed to delete task. Please try again.");
+        }
+
+        // Only refresh data if it's not a 404 (task not found)
+        if (error.response?.status !== 404) {
+          console.log("Refreshing project data due to delete error...");
+          fetchProjectData();
+        }
+      }
+    },
+    [todos, projectId, canEdit, fetchProjectData]
+  );
 
   const handleCancelEdit = useCallback(() => {
     setEditingTodo(null);
