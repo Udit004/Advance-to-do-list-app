@@ -66,11 +66,13 @@ const initializeSocket = (server) => {
     // NEW: Handle joining project room for collaboration
     socket.on("joinProject", async (data) => {
       const { projectId, userId, userInfo } = data;
-      
+
       console.log("🏢 Project join request:", { projectId, userId, userInfo });
 
       if (!projectId || !userId) {
-        socket.emit("projectError", { message: "ProjectId and userId are required" });
+        socket.emit("projectError", {
+          message: "ProjectId and userId are required",
+        });
         return;
       }
 
@@ -83,12 +85,12 @@ const initializeSocket = (server) => {
 
         // Join new project room
         socket.join(`project:${projectId}`);
-        
+
         // Store user session
         const sessionData = {
           userId,
           projectId,
-          userInfo: userInfo || { username: "Anonymous User", role: "viewer" }
+          userInfo: userInfo || { username: "Anonymous User", role: "viewer" },
         };
         userSessions.set(socket.id, sessionData);
 
@@ -96,10 +98,10 @@ const initializeSocket = (server) => {
         if (!projectUsers.has(projectId)) {
           projectUsers.set(projectId, new Set());
         }
-        
+
         const projectUserSet = projectUsers.get(projectId);
         // Remove any existing entry for this user (prevent duplicates)
-        projectUserSet.forEach(user => {
+        projectUserSet.forEach((user) => {
           if (user.userId === userId) {
             projectUserSet.delete(user);
           }
@@ -109,16 +111,18 @@ const initializeSocket = (server) => {
           userId,
           socketId: socket.id,
           ...sessionData.userInfo,
-          joinedAt: new Date()
+          joinedAt: new Date(),
         });
 
-        console.log(`✅ User ${userId} joined project room: project:${projectId}`);
+        console.log(
+          `✅ User ${userId} joined project room: project:${projectId}`
+        );
 
         // Confirm join to the user
         socket.emit("projectJoined", {
           projectId,
           userId,
-          activeUsers: Array.from(projectUserSet)
+          activeUsers: Array.from(projectUserSet),
         });
 
         // Broadcast to other users in the project
@@ -128,14 +132,15 @@ const initializeSocket = (server) => {
             userId,
             socketId: socket.id,
             ...sessionData.userInfo,
-            joinedAt: new Date()
+            joinedAt: new Date(),
           },
-          activeUsers: Array.from(projectUserSet)
+          activeUsers: Array.from(projectUserSet),
         });
 
         const room = io.sockets.adapter.rooms.get(`project:${projectId}`);
-        console.log(`📊 Project room ${projectId} now has ${room ? room.size : 0} clients`);
-
+        console.log(
+          `📊 Project room ${projectId} now has ${room ? room.size : 0} clients`
+        );
       } catch (error) {
         console.error("❌ Error joining project room:", error);
         socket.emit("projectError", { message: "Failed to join project room" });
@@ -146,7 +151,7 @@ const initializeSocket = (server) => {
     socket.on("leaveProject", async (data) => {
       const { projectId, userId } = data;
       const session = userSessions.get(socket.id);
-      
+
       if (session) {
         await handleLeaveProject(socket, session);
       }
@@ -155,19 +160,19 @@ const initializeSocket = (server) => {
     // Helper function to handle leaving project
     async function handleLeaveProject(socket, session) {
       const { projectId, userId } = session;
-      
+
       try {
         socket.leave(`project:${projectId}`);
-        
+
         // Remove from project users tracking
         const projectUserSet = projectUsers.get(projectId);
         if (projectUserSet) {
-          projectUserSet.forEach(user => {
+          projectUserSet.forEach((user) => {
             if (user.socketId === socket.id) {
               projectUserSet.delete(user);
             }
           });
-          
+
           // Clean up empty project rooms
           if (projectUserSet.size === 0) {
             projectUsers.delete(projectId);
@@ -177,16 +182,17 @@ const initializeSocket = (server) => {
         // Remove user session
         userSessions.delete(socket.id);
 
-        console.log(`✅ User ${userId} left project room: project:${projectId}`);
+        console.log(
+          `✅ User ${userId} left project room: project:${projectId}`
+        );
 
         // Broadcast to remaining users
         socket.to(`project:${projectId}`).emit("userLeftProject", {
           projectId,
           userId,
           socketId: socket.id,
-          activeUsers: projectUserSet ? Array.from(projectUserSet) : []
+          activeUsers: projectUserSet ? Array.from(projectUserSet) : [],
         });
-
       } catch (error) {
         console.error("❌ Error leaving project room:", error);
       }
@@ -205,7 +211,7 @@ const initializeSocket = (server) => {
     // Handle disconnect
     socket.on("disconnect", (reason) => {
       console.log("❌ User disconnected:", socket.id, "Reason:", reason);
-      
+
       // Handle project room cleanup on disconnect
       const session = userSessions.get(socket.id);
       if (session) {
@@ -302,7 +308,9 @@ const emitToProject = (projectId, eventName, data) => {
       return false;
     }
 
-    console.log(`📡 Emitting ${eventName} to project ${projectId} (${room.size} clients)`);
+    console.log(
+      `📡 Emitting ${eventName} to project ${projectId} (${room.size} clients)`
+    );
     io.to(`project:${projectId}`).emit(eventName, data);
     return true;
   } catch (error) {
@@ -314,19 +322,19 @@ const emitToProject = (projectId, eventName, data) => {
 // NEW: Specific project event functions
 const emitTodoCreated = (projectId, todoData) => {
   try {
-    console.log('📡 Emitting todoCreated to project:', projectId);
-    
+    console.log("📡 Emitting todoCreated to project:", projectId);
+
     return emitToProject(projectId, "todoCreated", {
       projectId,
       todo: {
         ...todoData,
-        project: projectId // Ensure project is included
+        project: projectId, // Ensure project is included
       },
-      createdBy: todoData.createdBy || 'Anonymous',
-      timestamp: new Date()
+      createdBy: todoData.createdBy || "Anonymous",
+      timestamp: new Date(),
     });
   } catch (socketError) {
-    console.error('❌ Failed to emit todoCreated:', socketError);
+    console.error("❌ Failed to emit todoCreated:", socketError);
     // Don't throw - socket errors shouldn't fail the API request
   }
 };
@@ -334,21 +342,23 @@ const emitTodoCreated = (projectId, todoData) => {
 // ✅ ALSO ADD: Retry mechanism for critical operations
 const createTodoWithRetry = async (todoData, maxRetries = 3) => {
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await new Todo(todoData).save();
     } catch (error) {
       console.warn(`Attempt ${attempt} failed:`, error.message);
       lastError = error;
-      
+
       if (attempt < maxRetries) {
         // Wait before retry (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.pow(2, attempt) * 1000)
+        );
       }
     }
   }
-  
+
   throw lastError;
 };
 
@@ -356,16 +366,132 @@ const emitTodoUpdated = (projectId, todoData) => {
   return emitToProject(projectId, "todoUpdated", {
     projectId,
     todo: todoData,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 };
 
+// ✅ OPTIMIZED: More efficient socket emission functions
+
 const emitTodoDeleted = (projectId, todoId) => {
-  return emitToProject(projectId, "todoDeleted", {
-    projectId,
-    todoId,
-    timestamp: new Date()
-  });
+  if (!io) {
+    console.error("❌ Socket.io not initialized");
+    return false;
+  }
+
+  if (!projectId || !todoId) {
+    console.error("❌ Missing projectId or todoId");
+    return false;
+  }
+
+  try {
+    const room = io.sockets.adapter.rooms.get(`project:${projectId}`);
+
+    // ✅ OPTIMIZED: Quick return if no clients to notify
+    if (!room || room.size === 0) {
+      console.log(`⚠️ No clients in project room ${projectId} - skipping emit`);
+      return false;
+    }
+
+    console.log(
+      `📡 Emitting todoDeleted to project ${projectId} (${room.size} clients)`
+    );
+
+    // ✅ OPTIMIZED: Minimal data payload for faster transmission
+    const payload = {
+      projectId,
+      todoId,
+      timestamp: Date.now(), // Use timestamp instead of Date object for smaller payload
+    };
+
+    io.to(`project:${projectId}`).emit("todoDeleted", payload);
+    return true;
+  } catch (error) {
+    console.error(`❌ Error emitting todoDeleted to project:`, error);
+    return false;
+  }
+};
+
+// ✅ OPTIMIZED: Batch emit function for multiple operations
+const emitBatchToProject = (projectId, events) => {
+  if (!io || !events || events.length === 0) return false;
+
+  try {
+    const room = io.sockets.adapter.rooms.get(`project:${projectId}`);
+    if (!room || room.size === 0) {
+      console.log(`⚠️ No clients in project room ${projectId}`);
+      return false;
+    }
+
+    console.log(`📡 Emitting ${events.length} events to project ${projectId}`);
+
+    // Send all events in a single batch
+    io.to(`project:${projectId}`).emit("batchUpdate", {
+      projectId,
+      events,
+      timestamp: Date.now(),
+    });
+
+    return true;
+  } catch (error) {
+    console.error(`❌ Error emitting batch to project:`, error);
+    return false;
+  }
+};
+
+// ✅ OPTIMIZED: Enhanced project room management
+const cleanupProjectRoom = (projectId) => {
+  try {
+    const projectUserSet = projectUsers.get(projectId);
+    if (projectUserSet && projectUserSet.size === 0) {
+      projectUsers.delete(projectId);
+      console.log(`🧹 Cleaned up empty project room: ${projectId}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error cleaning up project room ${projectId}:`, error);
+  }
+};
+
+// ✅ OPTIMIZED: More efficient user session management
+const handleLeaveProject = async (socket, session) => {
+  const { projectId, userId } = session;
+
+  try {
+    socket.leave(`project:${projectId}`);
+
+    // ✅ OPTIMIZED: Use Map.forEach for better performance
+    const projectUserSet = projectUsers.get(projectId);
+    if (projectUserSet) {
+      // Find and remove user more efficiently
+      for (const user of projectUserSet) {
+        if (user.socketId === socket.id) {
+          projectUserSet.delete(user);
+          break; // Exit early once found
+        }
+      }
+
+      // Clean up empty rooms
+      if (projectUserSet.size === 0) {
+        cleanupProjectRoom(projectId);
+      }
+    }
+
+    // Remove user session
+    userSessions.delete(socket.id);
+
+    console.log(`✅ User ${userId} left project room: project:${projectId}`);
+
+    // ✅ OPTIMIZED: Only emit if there are still users to notify
+    if (projectUserSet && projectUserSet.size > 0) {
+      socket.to(`project:${projectId}`).emit("userLeftProject", {
+        projectId,
+        userId,
+        socketId: socket.id,
+        activeUsers: Array.from(projectUserSet),
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error leaving project room:", error);
+  }
 };
 
 const emitTodoToggled = (projectId, todoId, isCompleted) => {
@@ -373,7 +499,7 @@ const emitTodoToggled = (projectId, todoId, isCompleted) => {
     projectId,
     todoId,
     isCompleted,
-    timestamp: new Date()
+    timestamp: new Date(),
   });
 };
 

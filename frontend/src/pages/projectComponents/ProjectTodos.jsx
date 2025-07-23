@@ -256,23 +256,24 @@ const ProjectTodos = () => {
     });
 
     // ✅ IMPROVED: Socket handlers with better error handling and state management
-    socket.on("todoDeleted", (data) => {
-      console.log("🗑️ Todo deleted via socket:", data);
-      if (data.projectId === projectId) {
-        setTodos((prev) => {
-          const filteredTodos = prev.filter((todo) => todo._id !== data.todoId);
-          console.log(
-            `Removed todo ${data.todoId}, remaining: ${filteredTodos.length}`
-          );
-          return filteredTodos;
-        });
+    const handleTodoDeleted = (data) => {
+    console.log("🗑️ Todo deleted via socket:", data);
+    
+    if (data.projectId === projectId) {
+      setTodos((prev) => {
+        const filteredTodos = prev.filter((todo) => todo._id !== data.todoId);
+        console.log(
+          `Removed todo ${data.todoId}, remaining: ${filteredTodos.length}`
+        );
+        return filteredTodos;
+      });
 
-        toast.success("Task deleted by another user", {
-          icon: "🗑️",
-          duration: 2000,
-        });
-      }
-    });
+      toast.success("Task deleted by another user", {
+        icon: "🗑️",
+        duration: 2000,
+      });
+    }
+  };
 
     socket.on("todoToggled", (data) => {
       console.log("✅ Todo toggled via socket:", data);
@@ -551,25 +552,16 @@ const ProjectTodos = () => {
       try {
         console.log("🗑️ Deleting todo:", id);
 
-        // Show loading state
+        // ✅ OPTIMIZED: Optimistic update first for instant UI feedback
+        setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
+
         const loadingToast = toast.loading("Deleting task...");
 
-        // Make API call to delete from database
+        // Make API call
         const response = await API.delete(`/projects/${projectId}/todos/${id}`);
 
-        // Dismiss loading toast
         toast.dismiss(loadingToast);
-
         console.log("✅ Todo deleted successfully from API:", response.data);
-
-        // Update local state immediately after successful API call
-        setTodos((prevTasks) => {
-          const filteredTasks = prevTasks.filter((task) => task._id !== id);
-          console.log(
-            `Local state updated: removed todo ${id}, remaining: ${filteredTasks.length}`
-          );
-          return filteredTasks;
-        });
 
         toast.success(`Task "${todoToDelete.task}" deleted successfully`, {
           icon: "🗑️",
@@ -577,15 +569,27 @@ const ProjectTodos = () => {
         });
       } catch (error) {
         console.error("❌ Error deleting todo:", error);
-
-        // Dismiss any loading toast
         toast.dismiss();
 
-        // Show specific error message based on response
+        // ✅ OPTIMIZED: Revert optimistic update on error
+        setTodos((prevTasks) => {
+          // Find the correct position to insert the todo back
+          const insertIndex = prevTasks.findIndex(
+            (task) => task.createdAt < todoToDelete.createdAt
+          );
+
+          if (insertIndex === -1) {
+            return [...prevTasks, todoToDelete];
+          }
+
+          const newTasks = [...prevTasks];
+          newTasks.splice(insertIndex, 0, todoToDelete);
+          return newTasks;
+        });
+
+        // Handle specific errors
         if (error.response?.status === 404) {
           toast.error("Task not found or already deleted");
-          // Remove from local state if it doesn't exist on server
-          setTodos((prevTasks) => prevTasks.filter((task) => task._id !== id));
         } else if (error.response?.status === 403) {
           toast.error("You don't have permission to delete this task");
         } else if (error.response?.status === 500) {
@@ -596,7 +600,7 @@ const ProjectTodos = () => {
           toast.error("Failed to delete task. Please try again.");
         }
 
-        // Only refresh data if it's not a 404 (task not found)
+        // Only refresh data if it's not a 404
         if (error.response?.status !== 404) {
           console.log("Refreshing project data due to delete error...");
           fetchProjectData();
@@ -605,7 +609,6 @@ const ProjectTodos = () => {
     },
     [todos, projectId, canEdit, fetchProjectData]
   );
-
   const handleCancelEdit = useCallback(() => {
     setEditingTodo(null);
     setShowForm(false);
