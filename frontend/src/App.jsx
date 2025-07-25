@@ -18,6 +18,7 @@ import Prices from "./pages/Prices";
 import TodoDashboard from "./pages/TodoDashboard";
 import Project from "./pages/projectComponents/ProjectTodos"
 import PaymentSuccess from "./pages/PaymentSuccess";
+import JoinProject from "./pages/projectComponents/JoinProject";
 
 // Loading component
 const LoadingSpinner = () => (
@@ -121,6 +122,7 @@ const AppContent = () => {
           <Route path="/TodoDashboard" element={<TodoDashboard />} />
           <Route path="/payment-success" element={<PaymentSuccess />} />
           <Route path="/project/:projectId/todos" element={<Project />} />
+          <Route path="/join/:projectId" element={<JoinProject />} />
           {/* Add a 404 route */}
           <Route path="*" element={
             <div className="text-center py-20">

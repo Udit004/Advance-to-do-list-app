@@ -6,7 +6,7 @@ import ProjectCard from './ProjectCard';
  * Project List Component
  * Displays projects in a list layout
  */
-const ProjectList = ({ projects, onDelete }) => {
+const ProjectList = ({ projects, onDelete, onShare, onCopyJoinLink }) => {
   if (projects.length === 0) {
     return (
       <div className="text-center py-12">
@@ -20,11 +20,13 @@ const ProjectList = ({ projects, onDelete }) => {
   return (
     <div className="space-y-4">
       {projects.map((project) => (
-        <ProjectCard 
-          key={project._id} 
-          project={project} 
+        <ProjectCard
+          key={project._id}
+          project={project}
           viewMode="list"
           onDelete={onDelete}
+          onShare={onShare}
+          onCopyJoinLink={onCopyJoinLink}
         />
       ))}
     </div>

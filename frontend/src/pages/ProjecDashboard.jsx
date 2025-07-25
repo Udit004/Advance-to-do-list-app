@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import API from "../api/config";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ExternalLink, Share2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 // Import child components
@@ -13,6 +13,7 @@ import CreateProjectModal from "./projectComponents/CreateProjectModal";
 import ProjectGrid from "./projectComponents/ProjectGrid";
 import ProjectList from "./projectComponents/ProjectList";
 import LoadingSpinner from "./projectComponents/LoadingSpinner";
+import ShareProjectModal from "./projectComponents/ShareProjectModal";
 
 /**
  * Main ProjectDashboard Component
@@ -29,6 +30,10 @@ const ProjectDashboard = () => {
   const [viewMode, setViewMode] = useState("grid"); // 'grid' or 'list'
   const [filterStatus, setFilterStatus] = useState("all"); // 'all', 'owned', 'shared'
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // NEW: Share modal state
+  const [selectedProjectForShare, setSelectedProjectForShare] = useState(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Fetch data on component mount
   useEffect(() => {
@@ -99,6 +104,40 @@ const ProjectDashboard = () => {
     }
   };
 
+  // NEW: Handle project sharing
+  const handleShareProject = (project) => {
+    setSelectedProjectForShare(project);
+    setShowShareModal(true);
+  };
+
+  // NEW: Handle share modal close
+  const handleShareModalClose = () => {
+    setShowShareModal(false);
+    setSelectedProjectForShare(null);
+  };
+
+  // NEW: Handle share modal update (refresh project data)
+  const handleShareModalUpdate = () => {
+    fetchData(); // Refresh the project data to show updated collaborators
+  };
+
+  // NEW: Generate shareable join link
+  const generateJoinLink = (projectId) => {
+    return `${window.location.origin}/join/${projectId}`;
+  };
+
+  // NEW: Copy join link to clipboard
+  const copyJoinLink = async (projectId) => {
+    try {
+      const joinLink = generateJoinLink(projectId);
+      await navigator.clipboard.writeText(joinLink);
+      // You could add a toast notification here
+      console.log('Join link copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy join link:', error);
+    }
+  };
+
   /**
    * Filter projects based on search term and status
    */
@@ -119,7 +158,7 @@ const ProjectDashboard = () => {
     }
   });
 
-  // Loading state - NOW USING LoadingSpinner COMPONENT
+  // Loading state
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -150,22 +189,22 @@ const ProjectDashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
       <div className="max-w-7xl mx-auto">
-        {/* Dashboard Header - USING COMPONENT */}
+        {/* Dashboard Header */}
         <DashboardHeader onCreateProject={() => setShowCreateForm(true)} />
 
-        {/* Statistics Cards - USING COMPONENT */}
+        {/* Statistics Cards */}
         <StatsCards
           projects={projects}
           pendingInvitations={pendingInvitations}
         />
 
-        {/* Pending Invitations - USING COMPONENT */}
+        {/* Pending Invitations */}
         <PendingInvitations
           invitations={pendingInvitations}
           onRespond={handleInvitationResponse}
         />
 
-        {/* Search and Filters - USING COMPONENT */}
+        {/* Search and Filters */}
         <SearchAndFilters
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -175,7 +214,7 @@ const ProjectDashboard = () => {
           setViewMode={setViewMode}
         />
 
-        {/* Create Project Modal - USING COMPONENT */}
+        {/* Create Project Modal */}
         {showCreateForm && (
           <CreateProjectModal
             onClose={() => setShowCreateForm(false)}
@@ -183,16 +222,29 @@ const ProjectDashboard = () => {
           />
         )}
 
-        {/* Projects Display - USING BOTH COMPONENTS */}
+        {/* NEW: Share Project Modal */}
+        {showShareModal && selectedProjectForShare && (
+          <ShareProjectModal
+            project={selectedProjectForShare}
+            onClose={handleShareModalClose}
+            onUpdate={handleShareModalUpdate}
+          />
+        )}
+
+        {/* Projects Display */}
         {viewMode === "grid" ? (
           <ProjectGrid
             projects={filteredProjects}
             onDelete={handleDeleteProject}
+            onShare={handleShareProject} // NEW: Pass share handler
+            onCopyJoinLink={copyJoinLink} // NEW: Pass copy link handler
           />
         ) : (
           <ProjectList
             projects={filteredProjects}
             onDelete={handleDeleteProject}
+            onShare={handleShareProject} // NEW: Pass share handler
+            onCopyJoinLink={copyJoinLink} // NEW: Pass copy link handler
           />
         )}
       </div>
