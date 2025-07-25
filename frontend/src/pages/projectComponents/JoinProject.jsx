@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import API from '../api/config';
+import { useAuth } from '../../context/AuthContext';
+import API from '../../api/config';
 import { 
   Users, 
   Lock, 
@@ -10,7 +10,13 @@ import {
   CheckCircle, 
   XCircle,
   AlertCircle,
-  ArrowLeft
+  ArrowLeft,
+  MessageSquare,
+  Clock,
+  Shield,
+  Eye,
+  Edit,
+  Crown
 } from 'lucide-react';
 
 const JoinProject = () => {
@@ -22,8 +28,10 @@ const JoinProject = () => {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [status, setStatus] = useState(null); // 'joined', 'requested', 'error'
+  const [status, setStatus] = useState(null); // 'joined', 'requested', 'error', 'already_member'
   const [error, setError] = useState('');
+  const [requestMessage, setRequestMessage] = useState('');
+  const [showMessageInput, setShowMessageInput] = useState(false);
 
   useEffect(() => {
     fetchProjectInfo();
@@ -41,17 +49,21 @@ const JoinProject = () => {
           const accessResponse = await API.get(`/projects/${projectId}`);
           if (accessResponse.data.success) {
             // User already has access
-            navigate(`/project/${projectId}/todos`);
+            setStatus('already_member');
             return;
           }
         } catch (accessError) {
-          console.error('Error checking project access:', accessError);
-          // User doesn't have access, which is expected
+          // User doesn't have access, which is expected for joining flow
+          console.log('User needs to join/request access');
         }
       }
     } catch (error) {
       console.error('Error fetching project:', error);
-      setError('Project not found or you don\'t have permission to view it');
+      if (error.response?.status === 404) {
+        setError('Project not found');
+      } else {
+        setError('Unable to load project information');
+      }
     } finally {
       setLoading(false);
     }
@@ -59,7 +71,9 @@ const JoinProject = () => {
 
   const handleJoinPublicProject = async () => {
     if (!currentUser) {
-      navigate('/login');
+      navigate('/login', { 
+        state: { returnUrl: `/join/${projectId}` }
+      });
       return;
     }
 
@@ -72,7 +86,12 @@ const JoinProject = () => {
       }, 2000);
     } catch (error) {
       console.error('Error joining project:', error);
-      setError(error.response?.data?.message || 'Failed to join project');
+      if (error.response?.status === 400 && 
+          error.response?.data?.message?.includes('already have access')) {
+        setStatus('already_member');
+      } else {
+        setError(error.response?.data?.message || 'Failed to join project');
+      }
     } finally {
       setJoining(false);
     }
@@ -80,26 +99,76 @@ const JoinProject = () => {
 
   const handleRequestAccess = async () => {
     if (!currentUser) {
-      navigate('/login');
+      navigate('/login', { 
+        state: { returnUrl: `/join/${projectId}` }
+      });
+      return;
+    }
+
+    if (!showMessageInput) {
+      setShowMessageInput(true);
       return;
     }
 
     setRequesting(true);
     try {
-      await API.post(`/projects/${projectId}/request-access`);
+      await API.post(`/projects/${projectId}/request-access`, {
+        message: requestMessage.trim()
+      });
       setStatus('requested');
     } catch (error) {
       console.error('Error requesting access:', error);
-      setError(error.response?.data?.message || 'Failed to request access');
+      if (error.response?.status === 400) {
+        const message = error.response.data.message;
+        if (message.includes('already has access')) {
+          setStatus('already_member');
+        } else if (message.includes('already pending')) {
+          setError('You have already requested access to this project');
+        } else {
+          setError(message);
+        }
+      } else {
+        setError('Failed to request access');
+      }
     } finally {
       setRequesting(false);
+    }
+  };
+
+  const getRoleIcon = (role) => {
+    switch (role) {
+      case 'owner':
+        return <Crown className="w-4 h-4" />;
+      case 'admin':
+        return <Shield className="w-4 h-4" />;
+      case 'editor':
+        return <Edit className="w-4 h-4" />;
+      case 'viewer':
+      default:
+        return <Eye className="w-4 h-4" />;
+    }
+  };
+
+  const getRoleDescription = (role) => {
+    switch (role) {
+      case 'viewer':
+        return 'Can view project and todos';
+      case 'editor':
+        return 'Can edit todos and project content';
+      case 'admin':
+        return 'Can manage collaborators and settings';
+      default:
+        return 'Can view project content';
     }
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading project information...</p>
+        </div>
       </div>
     );
   }
@@ -109,14 +178,22 @@ const JoinProject = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl shadow-2xl border border-slate-700/50 p-8 text-center max-w-md">
           <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-4">Access Denied</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">Unable to Load Project</h2>
           <p className="text-slate-300 mb-6">{error}</p>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
-          >
-            Back to Dashboard
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => navigate('/TodoDashboard')}
+              className="px-6 py-3 bg-slate-600 hover:bg-slate-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              Back to Dashboard
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -128,7 +205,7 @@ const JoinProject = () => {
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/TodoDashboard')}
             className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-6 h-6 text-slate-400" />
@@ -168,6 +245,21 @@ const JoinProject = () => {
               <div className="text-sm text-slate-400">
                 Created by <span className="text-slate-300 font-medium">{project?.ownerName}</span>
               </div>
+
+              {/* Default Role Info */}
+              {project?.shareSettings?.defaultRole && (
+                <div className="mt-4 p-3 bg-slate-700/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm">
+                    {getRoleIcon(project.shareSettings.defaultRole)}
+                    <span className="text-slate-300 font-medium">
+                      You'll join as: {project.shareSettings.defaultRole}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1">
+                    {getRoleDescription(project.shareSettings.defaultRole)}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -187,11 +279,30 @@ const JoinProject = () => {
           {status === 'requested' && (
             <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-6">
               <div className="flex items-center gap-3">
-                <UserPlus className="w-6 h-6 text-blue-400" />
+                <Clock className="w-6 h-6 text-blue-400" />
                 <div>
-                  <h3 className="text-blue-400 font-semibold">Access Requested</h3>
+                  <h3 className="text-blue-400 font-semibold">Access Request Sent</h3>
                   <p className="text-blue-300 text-sm">
                     Your request has been sent to the project owner. You'll be notified when they respond.
+                  </p>
+                  {requestMessage && (
+                    <div className="mt-2 p-2 bg-slate-600/50 rounded text-blue-200 text-xs">
+                      <strong>Your message:</strong> "{requestMessage}"
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {status === 'already_member' && (
+            <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-4 mb-6">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-blue-400" />
+                <div>
+                  <h3 className="text-blue-400 font-semibold">You're Already a Member</h3>
+                  <p className="text-blue-300 text-sm">
+                    You already have access to this project.
                   </p>
                 </div>
               </div>
@@ -217,7 +328,9 @@ const JoinProject = () => {
                 <div className="text-center">
                   <p className="text-slate-300 mb-4">You need to log in to join this project</p>
                   <button
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate('/login', { 
+                      state: { returnUrl: `/join/${projectId}` }
+                    })}
                     className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
                   >
                     Log In to Continue
@@ -226,7 +339,7 @@ const JoinProject = () => {
               ) : project?.isPublic ? (
                 <div className="text-center">
                   <p className="text-slate-300 mb-4">
-                    This is a public project. You can join it directly as a viewer.
+                    This is a public project. You can join it directly.
                   </p>
                   <button
                     onClick={handleJoinPublicProject}
@@ -251,6 +364,21 @@ const JoinProject = () => {
                   <p className="text-slate-300 mb-4">
                     This is a private project. You need to request access from the owner.
                   </p>
+                  
+                  {showMessageInput && (
+                    <div className="mb-4">
+                      <label className="block text-slate-300 text-sm font-medium mb-2 text-left">
+                        Message to Project Owner (Optional)
+                      </label>
+                      <textarea
+                        value={requestMessage}
+                        onChange={(e) => setRequestMessage(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500 h-20 resize-none"
+                        placeholder="Tell the owner why you'd like to join this project..."
+                      />
+                    </div>
+                  )}
+                  
                   <button
                     onClick={handleRequestAccess}
                     disabled={requesting}
@@ -261,24 +389,46 @@ const JoinProject = () => {
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                         Requesting...
                       </>
-                    ) : (
+                    ) : showMessageInput ? (
                       <>
                         <UserPlus className="w-4 h-4" />
+                        Send Request
+                      </>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
                         Request Access
                       </>
                     )}
                   </button>
+                  
+                  {showMessageInput && (
+                    <button
+                      onClick={() => setShowMessageInput(false)}
+                      className="ml-3 px-4 py-3 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Back to Dashboard */}
-          {(status === 'requested' || error) && (
-            <div className="text-center mt-6">
+          {/* Action buttons for existing members or completed actions */}
+          {(status === 'requested' || status === 'already_member' || error) && (
+            <div className="text-center mt-6 space-x-3">
+              {status === 'already_member' && (
+                <button
+                  onClick={() => navigate(`/project/${projectId}/todos`)}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
+                >
+                  Go to Project
+                </button>
+              )}
               <button
-                onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                onClick={() => navigate('/TodoDashboard')}
+                className="px-4 py-3 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-colors"
               >
                 Back to Dashboard
               </button>
@@ -290,7 +440,9 @@ const JoinProject = () => {
         <div className="bg-slate-800/30 rounded-lg p-4 text-center">
           <p className="text-slate-400 text-sm">
             {project?.isPublic 
-              ? "Public projects allow anyone with the link to join as a viewer."
+              ? "Public projects allow anyone with the link to join directly."
+              : project?.shareSettings?.requireApproval
+              ? "This project requires owner approval for all new members."
               : "Private projects require approval from the owner before you can access them."
             }
           </p>

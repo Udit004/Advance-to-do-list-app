@@ -13,8 +13,15 @@ const {
 // Create a new project
 const createProject = async (req, res) => {
   try {
-    const { name, description, isPublic, color, tags } = req.body;
-    const userId = req.user && req.user._id;
+    const { 
+      name, 
+      description, 
+      isPublic, 
+      color, 
+      tags, 
+      shareSettings 
+    } = req.body;
+    const userId = req.user._id || req.user.uid;
 
     if (!userId) {
       return res.status(401).json({
@@ -23,20 +30,29 @@ const createProject = async (req, res) => {
       });
     }
 
-    if (!name) {
+    if (!name || name.trim() === '') { // FIX: Better validation
       return res.status(400).json({
         success: false,
         message: "Project name is required",
       });
     }
 
+    const defaultShareSettings = {
+      allowPublicLink: true,
+      requireApproval: false,
+      defaultRole: 'viewer',
+      ...shareSettings
+    };
+
     const newProject = new Project({
-      name,
-      description,
+      name: name.trim(), // FIX: Trim whitespace
+      description: description ? description.trim() : '',
       owner: userId,
-      isPublic: isPublic || false,
+      isPublic: Boolean(isPublic), // FIX: Ensure boolean
       color: color || "blue",
-      tags: tags || [],
+      tags: Array.isArray(tags) ? tags : [], // FIX: Ensure array
+      shareSettings: defaultShareSettings,
+      lastActivity: new Date() // FIX: Add initial activity timestamp
     });
 
     const savedProject = await newProject.save();
@@ -47,6 +63,17 @@ const createProject = async (req, res) => {
       data: savedProject,
     });
   } catch (error) {
+    console.error('Error creating project:', error); // FIX: Add logging
+    
+    // FIX: Handle validation errors specifically
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        error: error.message,
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: "Error creating project",
@@ -55,62 +82,432 @@ const createProject = async (req, res) => {
   }
 };
 
-// Get all projects for a user (owned + collaborated + public)
-const getProjectsByUser = async (req, res) => {
+// Enhanced share project with multiple options
+const shareProject = async (req, res) => {
   try {
-    const userId = req.params.uid || req.user._id;
-    const { includePublic = false, status = "all" } = req.query;
+    const { projectId } = req.params;
+    const { 
+      email, 
+      emails, 
+      role = "viewer",
+      message = "",
+      sendEmail = true 
+    } = req.body;
+    const userId = req.user._id || req.user.uid;
 
-    if (!userId) {
-      return res.status(400).json({
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
         success: false,
-        message: "User ID is required",
+        message: "Project not found",
       });
     }
 
-    const conditions = {
-      $or: [
-        { owner: userId },
-        {
-          "collaborators.userId": userId,
-          "collaborators.status":
-            status === "all" ? { $in: ["pending", "accepted"] } : status,
-        },
-      ],
-    };
-
-    if (includePublic) {
-      conditions.$or.push({ isPublic: true });
+    // FIX: Better permission checking with fallback
+    let canInvite = false;
+    try {
+      const userRole = project.getUserRole ? project.getUserRole(userId) : null;
+      if (['owner', 'admin'].includes(userRole)) {
+        canInvite = true;
+      } else {
+        const collaborator = project.collaborators.find(c => c.userId === userId);
+        canInvite = collaborator?.permissions?.canInvite || false;
+      }
+    } catch (error) {
+      // Fallback: only owner can invite
+      canInvite = project.owner.toString() === userId.toString();
     }
 
-    const projects = await Project.find(conditions)
-      .populate("todos", "task isCompleted priority dueDate")
-      .sort({ updatedAt: -1 });
+    if (!canInvite) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to invite others",
+      });
+    }
 
-    const projectsWithRole = projects.map((project) => {
-      const projectObj = project.toObject();
-      projectObj.userRole = project.getUserRole(userId);
-      return projectObj;
-    });
+    const emailList = emails && Array.isArray(emails) ? emails : [email].filter(Boolean); // FIX: Better email handling
+    
+    if (emailList.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one email is required",
+      });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const emailAddr of emailList) {
+      try {
+        if (!emailAddr || !emailAddr.trim()) continue;
+
+        const targetUser = await User.findOne({ email: emailAddr.trim().toLowerCase() });
+        if (!targetUser) {
+          errors.push({
+            email: emailAddr,
+            error: "User not found with this email"
+          });
+          continue;
+        }
+
+        const targetUserId = targetUser._id || targetUser.uid;
+
+        // Check if user is already a collaborator
+        const existingCollaborator = project.collaborators.find(
+          c => c.userId === targetUserId.toString()
+        );
+
+        if (existingCollaborator) {
+          if (existingCollaborator.status === 'pending') {
+            errors.push({
+              email: emailAddr,
+              error: "Invitation already sent"
+            });
+          } else {
+            errors.push({
+              email: emailAddr,
+              error: "User is already a collaborator"
+            });
+          }
+          continue;
+        }
+
+        // FIX: Use proper method if available, otherwise manual addition
+        if (project.addCollaborator) {
+          await project.addCollaborator({
+            userId: targetUserId,
+            email: targetUser.email,
+            username: targetUser.username || targetUser.displayName,
+            role,
+            invitedBy: userId
+          });
+        } else {
+          // Fallback manual addition
+          project.collaborators.push({
+            userId: targetUserId,
+            email: targetUser.email,
+            username: targetUser.username || targetUser.displayName || targetUser.email,
+            role,
+            status: 'pending',
+            invitedBy: userId,
+            invitedAt: new Date(),
+            permissions: project.getPermissionsByRole ? project.getPermissionsByRole(role) : {}
+          });
+          await project.save();
+        }
+
+        results.push({
+          email: emailAddr,
+          username: targetUser.username || targetUser.displayName,
+          role,
+          status: 'invited'
+        });
+
+      } catch (error) {
+        console.error('Error inviting user:', error);
+        errors.push({
+          email: emailAddr,
+          error: error.message
+        });
+      }
+    }
 
     res.status(200).json({
       success: true,
-      data: projectsWithRole,
+      message: "Invitations processed",
+      data: {
+        successful: results,
+        errors: errors
+      }
     });
+
   } catch (error) {
+    console.error('Error sharing project:', error);
     res.status(500).json({
       success: false,
-      message: "Error fetching projects",
+      message: "Error sharing project",
       error: error.message,
     });
   }
 };
 
-// Get a single project by ID with access control
+// Request access to private project
+const requestProjectAccess = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { message = "" } = req.body;
+    const userId = req.user._id || req.user.uid;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (project.isPublic) {
+      return res.status(400).json({
+        success: false,
+        message: "This is a public project, you can join directly",
+      });
+    }
+
+    await project.requestAccess({
+      userId,
+      email: req.user.email,
+      username: req.user.username || req.user.displayName,
+      message,
+    });
+
+    // TODO: Notify project owner about the access request
+    // await sendAccessRequestNotification(project.owner, req.user, project);
+
+    res.status(200).json({
+      success: true,
+      message: "Access request sent successfully",
+    });
+  } catch (error) {
+    if (
+      error.message === "User already has access" ||
+      error.message === "Access request already pending"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error requesting access",
+      error: error.message,
+    });
+  }
+};
+
+// Get access requests for project owners
+const getAccessRequests = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user._id || req.user.uid;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (!project.canUserManage(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to view access requests",
+      });
+    }
+
+    const pendingRequests = project.accessRequests.filter(
+      (r) => r.status === "pending"
+    );
+
+    res.status(200).json({
+      success: true,
+      data: pendingRequests,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching access requests",
+      error: error.message,
+    });
+  }
+};
+
+// Respond to access request
+const respondToAccessRequest = async (req, res) => {
+  try {
+    const { projectId, requestId } = req.params;
+    const { action } = req.body; // 'approve' or 'reject'
+    const userId = req.user._id || req.user.uid;
+
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Action must be "approve" or "reject"',
+      });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (!project.canUserManage(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to respond to access requests",
+      });
+    }
+
+    await project.respondToAccessRequest(requestId, action, userId);
+
+    // TODO: Send notification to requester
+    // await sendAccessRequestResponseNotification(requester, project, action);
+
+    res.status(200).json({
+      success: true,
+      message: `Access request ${action}d successfully`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error responding to access request",
+      error: error.message,
+    });
+  }
+};
+
+// Join public project
+const joinPublicProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user._id || req.user.uid;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (!project.isPublic) {
+      return res.status(403).json({
+        success: false,
+        message: "Project is private. Please request access instead.",
+      });
+    }
+
+    if (project.hasAccess(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have access to this project",
+      });
+    }
+
+    await project.addCollaborator({
+      userId,
+      email: req.user.email,
+      username: req.user.username || req.user.displayName,
+      role: project.shareSettings.defaultRole,
+      invitedBy: project.owner,
+    });
+
+    // Auto-accept for public projects
+    await project.respondToInvitation(userId, "accept");
+
+    res.status(200).json({
+      success: true,
+      message: "Successfully joined the project",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error joining project",
+      error: error.message,
+    });
+  }
+};
+
+// Update collaborator role
+const updateCollaboratorRole = async (req, res) => {
+  try {
+    const { projectId, collaboratorId } = req.params;
+    const { role } = req.body;
+    const userId = req.user._id || req.user.uid;
+
+    if (!["viewer", "editor", "admin"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role",
+      });
+    }
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (!project.canUserManage(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to manage roles",
+      });
+    }
+
+    await project.updateCollaboratorRole(collaboratorId, role);
+
+    res.status(200).json({
+      success: true,
+      message: "Role updated successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error updating role",
+      error: error.message,
+    });
+  }
+};
+
+// Remove collaborator
+const removeCollaborator = async (req, res) => {
+  try {
+    const { projectId, collaboratorId } = req.params;
+    const userId = req.user._id || req.user.uid;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: "Project not found",
+      });
+    }
+
+    if (!project.canUserManage(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have permission to remove collaborators",
+      });
+    }
+
+    await project.removeCollaborator(collaboratorId);
+
+    res.status(200).json({
+      success: true,
+      message: "Collaborator removed successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error removing collaborator",
+      error: error.message,
+    });
+  }
+};
+
+// Get project with collaboration info
 const getProjectById = async (req, res) => {
   try {
     const projectId = req.params.id;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.uid;
 
     if (!projectId) {
       return res.status(400).json({
@@ -140,6 +537,18 @@ const getProjectById = async (req, res) => {
 
     const projectData = project.toObject();
     projectData.userRole = project.getUserRole(userId);
+    projectData.userPermissions = {
+      canEdit: project.canUserEdit(userId),
+      canManage: project.canUserManage(userId),
+    };
+
+    // Only include access requests for managers
+    if (!project.canUserManage(userId)) {
+      delete projectData.accessRequests;
+    }
+
+    // Update last activity
+    await project.updateActivity();
 
     res.status(200).json({
       success: true,
@@ -154,86 +563,150 @@ const getProjectById = async (req, res) => {
   }
 };
 
-// Share project with another user
-const shareProject = async (req, res) => {
+// Get projects by user with enhanced filtering
+// Get projects by user with enhanced filtering - FIXED VERSION
+const getProjectsByUser = async (req, res) => {
   try {
-    const { projectId } = req.params;
-    const { email, role = "editor" } = req.body;
-    const userId = req.user._id;
+    const userId = req.params.uid || req.user._id || req.user.uid;
+    const { 
+      includePublic = false, 
+      status = "all",
+      role = "all" // 'owned', 'collaborated', 'all'
+    } = req.query;
 
-    if (!email) {
+    if (!userId) {
       return res.status(400).json({
         success: false,
-        message: "Email is required",
+        message: "User ID is required",
       });
     }
 
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: "Project not found",
-      });
-    }
+    let conditions = {};
 
-    if (project.owner !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: "Only project owner can share projects",
-      });
-    }
-
-    const targetUser = await User.findOne({ email });
-    if (!targetUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found with this email",
-      });
-    }
-
-    try {
-      await project.addCollaborator({
-        userId: targetUser._id || targetUser.uid,
-        email: targetUser.email,
-        username: targetUser.username || targetUser.displayName,
-        role,
-      });
-
-      res.status(200).json({
-        success: true,
-        message: "Project shared successfully",
-        data: {
-          collaborator: {
-            email: targetUser.email,
-            username: targetUser.username || targetUser.displayName,
-            role,
+    if (role === 'owned') {
+      // FIX: Use string comparison for Firebase UIDs, not ObjectId
+      conditions = { owner: userId };
+    } else if (role === 'collaborated') {
+      conditions = {
+        "collaborators.userId": userId,
+        "collaborators.status": status === "all" ? { $in: ["pending", "accepted"] } : status,
+        owner: { $ne: userId } // This is fine since we're using $ne with string
+      };
+    } else {
+      conditions = {
+        $or: [
+          { owner: userId }, // FIX: Direct string comparison
+          {
+            "collaborators.userId": userId,
+            "collaborators.status": status === "all" ? { $in: ["pending", "accepted"] } : status,
           },
-        },
-      });
-    } catch (error) {
-      if (error.message === "User is already a collaborator") {
-        return res.status(400).json({
-          success: false,
-          message: "User is already a collaborator on this project",
-        });
-      }
-      throw error;
+        ]
+      };
     }
+
+    // FIX: Only add public condition if not getting owned projects
+    if (includePublic === 'true' && role !== 'owned') {
+      if (!conditions.$or) {
+        conditions.$or = [];
+      }
+      conditions.$or.push({ isPublic: true });
+    }
+
+    const projects = await Project.find(conditions)
+      .populate("todos", "task isCompleted priority dueDate")
+      .populate("owner", "name email username displayName") // This populate might not work with Firebase UIDs
+      .sort({ lastActivity: -1, updatedAt: -1 });
+
+    const projectsWithRole = projects.map((project) => {
+      const projectObj = project.toObject();
+      
+      // FIX: Safely get user role with string comparison
+      try {
+        projectObj.userRole = project.getUserRole ? project.getUserRole(userId) : 'viewer';
+        projectObj.userPermissions = {
+          canEdit: project.canUserEdit ? project.canUserEdit(userId) : false,
+          canManage: project.canUserManage ? project.canUserManage(userId) : false
+        };
+      } catch (error) {
+        console.warn('Error getting user role:', error);
+        // Fallback logic with string comparison
+        if (project.owner === userId) { // FIX: String comparison instead of toString()
+          projectObj.userRole = 'owner';
+          projectObj.userPermissions = { canEdit: true, canManage: true };
+        } else {
+          const collaborator = project.collaborators.find(c => c.userId === userId);
+          projectObj.userRole = collaborator ? collaborator.role : 'viewer';
+          projectObj.userPermissions = { 
+            canEdit: collaborator ? ['editor', 'admin'].includes(collaborator.role) : false,
+            canManage: collaborator ? collaborator.role === 'admin' : false
+          };
+        }
+      }
+      
+      // Don't include access requests in list view
+      delete projectObj.accessRequests;
+      
+      return projectObj;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: projectsWithRole,
+    });
   } catch (error) {
+    console.error('Error in getProjectsByUser:', error);
     res.status(500).json({
       success: false,
-      message: "Error sharing project",
+      message: "Error fetching projects",
       error: error.message,
     });
   }
 };
 
-// Accept/Decline project invitation
+// Get pending invitations for current user
+const getPendingInvitations = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.uid;
+
+    const projects = await Project.find({
+      "collaborators.userId": userId,
+      "collaborators.status": "pending",
+    })
+      .select("name description owner createdAt")
+      .populate("owner", "name email username");
+
+    const invitationsWithOwnerInfo = projects.map((project) => {
+      const projectObj = project.toObject();
+      const invitation = project.collaborators.find((c) => c.userId === userId);
+
+      return {
+        ...projectObj,
+        inviterName:
+          project.owner.name || project.owner.username || project.owner.email,
+        role: invitation.role,
+        invitedAt: invitation.invitedAt,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: invitationsWithOwnerInfo,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching pending invitations",
+      error: error.message,
+    });
+  }
+};
+
+// Respond to invitation
 const respondToInvitation = async (req, res) => {
   try {
     const { projectId } = req.params;
     const { action } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.uid;
 
     if (!["accept", "decline"].includes(action)) {
       return res.status(400).json({
@@ -250,25 +723,20 @@ const respondToInvitation = async (req, res) => {
       });
     }
 
-    const collaborator = project.collaborators.find(
-      (collab) => collab.userId === userId && collab.status === "pending"
-    );
-
-    if (!collaborator) {
-      return res.status(404).json({
-        success: false,
-        message: "Invitation not found or already responded",
-      });
-    }
-
-    collaborator.status = action === "accept" ? "accepted" : "declined";
-    await project.save();
+    await project.respondToInvitation(userId, action);
 
     res.status(200).json({
       success: true,
       message: `Invitation ${action}ed successfully`,
     });
   } catch (error) {
+    if (error.message === "Invitation not found") {
+      return res.status(404).json({
+        success: false,
+        message: "Invitation not found or already responded",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Error responding to invitation",
@@ -277,35 +745,64 @@ const respondToInvitation = async (req, res) => {
   }
 };
 
-// Get user's pending invitations
-const getPendingInvitations = async (req, res) => {
-  try {
-    const userId = req.user._id;
+const deleteProject = async (req, res) => {
+  const session = await mongoose.startSession();
 
-    const projects = await Project.find({
-      "collaborators.userId": userId,
-      "collaborators.status": "pending",
-    }).select("name description owner createdAt");
+  try {
+    const projectId = req.params.id;
+    const userId = req.user._id || req.user.uid; // FIX: Handle both formats
+
+    if (!projectId) {
+      return res.status(400).json({
+        success: false,
+        message: "Project ID is required",
+      });
+    }
+
+    await session.withTransaction(async () => {
+      const project = await Project.findById(projectId).session(session);
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      // FIX: Proper string comparison for MongoDB ObjectIds
+      if (project.owner.toString() !== userId.toString()) {
+        throw new Error("Only project owner can delete projects");
+      }
+
+      // Remove project reference from all associated todos
+      await Todo.updateMany(
+        { project: projectId },
+        { $unset: { project: 1 } },
+        { session }
+      );
+
+      // Delete the project
+      await Project.findByIdAndDelete(projectId).session(session);
+    });
 
     res.status(200).json({
       success: true,
-      data: projects,
+      message: "Project deleted successfully",
     });
   } catch (error) {
+    console.error(`Error deleting project ${projectId}:`, error); // FIX: Add logging
     res.status(500).json({
       success: false,
-      message: "Error fetching pending invitations",
+      message: error.message || "Error deleting project",
       error: error.message,
     });
+  } finally {
+    await session.endSession();
   }
 };
 
-// Update project
+// 2. Fix the updateProject function - userId handling
 const updateProject = async (req, res) => {
   try {
     const projectId = req.params.id;
     const { name, description, isPublic, color, tags } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id || req.user.uid; // FIX: Handle both _id and uid
 
     if (!projectId) {
       return res.status(400).json({
@@ -330,9 +827,17 @@ const updateProject = async (req, res) => {
       });
     }
 
+    // FIX: Update lastActivity when project is updated
     const updatedProject = await Project.findByIdAndUpdate(
       projectId,
-      { name, description, isPublic, color, tags },
+      {
+        name,
+        description,
+        isPublic,
+        color,
+        tags,
+        lastActivity: new Date(), // Add this
+      },
       { new: true, runValidators: true }
     );
 
@@ -350,135 +855,7 @@ const updateProject = async (req, res) => {
   }
 };
 
-// FIXED: Delete project with proper cleanup of todos
-const deleteProject = async (req, res) => {
-  const session = await mongoose.startSession();
-
-  try {
-    const projectId = req.params.id;
-    const userId = req.user._id;
-
-    if (!projectId) {
-      return res.status(400).json({
-        success: false,
-        message: "Project ID is required",
-      });
-    }
-
-    await session.withTransaction(async () => {
-      const project = await Project.findById(projectId).session(session);
-      if (!project) {
-        throw new Error("Project not found");
-      }
-
-      if (project.owner !== userId) {
-        throw new Error("Only project owner can delete projects");
-      }
-
-      // Remove project reference from all associated todos
-      await Todo.updateMany(
-        { project: projectId },
-        { $unset: { project: 1 } },
-        { session }
-      );
-
-      // Delete the project
-      await Project.findByIdAndDelete(projectId).session(session);
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Project deleted successfully",
-    });
-    console.log(`Project ${projectId} deleted by user ${userId}`);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message || "Error deleting project",
-      error: error.message,
-    });
-    console.error(`Error deleting project ${projectId}:`, error);
-  } finally {
-    await session.endSession();
-  }
-};
-
 // // FIXED: Add existing todo to project with proper bidirectional relationship
-// const addTodoToProject = async (req, res) => {
-//   const session = await mongoose.startSession();
-
-//   try {
-//     const { projectId } = req.params;
-//     const { todoId } = req.body;
-//     const userId = req.user._id;
-
-//     await session.withTransaction(async () => {
-//       const project = await Project.findById(projectId).session(session);
-//       if (!project) {
-//         throw new Error("Project not found");
-//       }
-
-//       const userRole = project.getUserRole(userId);
-//       if (!userRole || userRole === "viewer") {
-//         throw new Error("Insufficient permissions");
-//       }
-
-//       const todo = await Todo.findById(todoId).session(session);
-//       if (!todo || todo.user.toString() !== userId.toString()) {
-//         throw new Error("Todo not found or access denied");
-//       }
-
-//       if (project.todos.includes(todoId)) {
-//         throw new Error("Todo already in this project");
-//       }
-
-//       // Update both sides of the relationship
-//       await Todo.findByIdAndUpdate(
-//         todoId,
-//         { project: projectId },
-//         { session, new: true }
-//       );
-
-//       await Project.findByIdAndUpdate(
-//         projectId,
-//         { $push: { todos: todoId } },
-//         { session, new: true }
-//       );
-
-//       // Update project stats
-//       await project.updateStats();
-//     });
-
-//     // Fetch updated data after transaction
-//     const updatedTodo = await Todo.findById(todoId);
-//     const updatedProject = await Project.findById(projectId);
-
-//     emitTodoCreated(projectId, updatedTodo);
-
-//     res.status(200).json({
-//       success: true,
-//       message: "Todo added to project successfully",
-//       data: {
-//         project: updatedProject,
-//         todo: updatedTodo
-//       },
-//     });
-
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || "Error adding todo to project",
-//       error: error.message,
-//     });
-//   } finally {
-//     await session.endSession();
-//   }
-// };
-
-// FIXED: Remove todo from project with proper bidirectional cleanup
-// IMPROVED: Create todo with duplicate prevention
-
-// ✅ FIXED: createTodoInProject function with proper project association
 
 const createTodoInProject = async (req, res) => {
   const { projectId } = req.params;
@@ -766,7 +1143,6 @@ const createTodoInProject = async (req, res) => {
 
 // ✅ IMPROVED: Remove todo with proper cleanup
 // ✅ FIXED: Remove todo with proper cleanup - ACTUALLY DELETE THE TODO
-// ✅ FIXED: Remove todo with retry logic and proper cleanup
 // ✅ OPTIMIZED: Simplified and faster delete operation
 // ✅ OPTIMIZED: Simplified and faster delete operation
 const removeTodoFromProject = async (req, res) => {
@@ -780,7 +1156,7 @@ const removeTodoFromProject = async (req, res) => {
     // Don't use .lean() for project since we need the getUserRole method
     const [project, todo] = await Promise.all([
       Project.findById(projectId), // Need full document for getUserRole method
-      Todo.findOne({ _id: todoId, project: projectId }).lean()
+      Todo.findOne({ _id: todoId, project: projectId }).lean(),
     ]);
 
     if (!project) {
@@ -799,7 +1175,7 @@ const removeTodoFromProject = async (req, res) => {
 
     // ✅ FIXED: Use the same getUserRole method as in your original code
     const userRole = project.getUserRole(userId);
-    
+
     if (!userRole || userRole === "viewer") {
       return res.status(403).json({
         success: false,
@@ -818,7 +1194,7 @@ const removeTodoFromProject = async (req, res) => {
           updatedAt: new Date(),
         },
         { new: false } // Don't return the document to save bandwidth
-      )
+      ),
     ]);
 
     if (!deletedTodo) {
@@ -852,12 +1228,11 @@ const removeTodoFromProject = async (req, res) => {
       message: "Todo deleted successfully from project",
       data: { deletedTodoId: todoId },
     });
-
   } catch (error) {
     console.error("❌ Error deleting todo from project:", error);
 
     // ✅ IMPROVED: Better error handling without retries
-    if (error.name === 'CastError') {
+    if (error.name === "CastError") {
       return res.status(400).json({
         success: false,
         message: "Invalid todo or project ID",
@@ -867,7 +1242,10 @@ const removeTodoFromProject = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error deleting todo from project",
-      error: process.env.NODE_ENV === 'development' ? error.message : "Internal server error",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Internal server error",
     });
   }
 };
@@ -1061,15 +1439,22 @@ const toggleTodoInProject = async (req, res) => {
 
 module.exports = {
   createProject,
-  getProjectsByUser,
-  getProjectById,
-  removeTodoFromProject,
   shareProject,
-  respondToInvitation,
+  requestProjectAccess,
+  getAccessRequests,
+  respondToAccessRequest,
+  joinPublicProject,
+  updateCollaboratorRole,
+  removeCollaborator,
+  getProjectById,
+  getProjectsByUser,
   getPendingInvitations,
+  respondToInvitation,
   updateProject,
   deleteProject,
+
   createTodoInProject,
+  removeTodoFromProject,
   updateTodoInProject,
   toggleTodoInProject,
 };

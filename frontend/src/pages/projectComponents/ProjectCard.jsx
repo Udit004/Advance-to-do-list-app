@@ -29,10 +29,7 @@ import {
  * Enhanced Project Card Component
  * Displays individual project information with improved visibility and user experience
  */
-const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-
+const ProjectCard = ({ project, viewMode = 'grid', onDelete, onShare, onCopyJoinLink }) => {  const [showDropdown, setShowDropdown] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(project.isFavorite || false);
@@ -117,27 +114,25 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
   }, []);
 
   /**
-   * Handle project sharing
+   * Handle project sharing - UPDATED
    */
-  const handleShare = () => {
-    setShowShareModal(true);
-    setShowDropdown(false);
-  };
+// Handle share button click
+const handleShare = () => {
+  setShowDropdown(false);
+  onShare(project);
+};
 
-  /**
-   * Handle copying project link
-   */
-  const handleCopyLink = async () => {
-    try {
-      const projectUrl = `${window.location.origin}/project/${project._id}/todos`;
-      await navigator.clipboard.writeText(projectUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Failed to copy link:", error);
-    }
-    setShowDropdown(false);
-  };
+// Handle copy join link
+const handleCopyJoinLink = async () => {
+  setShowDropdown(false);
+  try {
+    await onCopyJoinLink(project._id);
+    // Optional: Add toast notification here
+  } catch (error) {
+    console.error('Failed to copy join link:', error);
+  }
+};
+
 
   /**
    * Handle bookmark toggle
@@ -149,7 +144,6 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
     // Here you would typically call an API to update the favorite status
     console.log("Toggle bookmark for project:", project._id);
   };
-
 
   /**
    * Handle edit project
@@ -406,6 +400,7 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
 
             {/* Quick Action Buttons - Always Visible */}
             <div className="flex items-center gap-1">
+              {/* UPDATED: Share button with enhanced functionality */}
               <button
                 onClick={handleShare}
                 className="p-2.5 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-110 group/btn border border-transparent hover:border-slate-600/50"
@@ -414,10 +409,11 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
                 <Share2 className="w-4 h-4 text-slate-400 group-hover/btn:text-blue-400 transition-colors" />
               </button>
 
+              {/* UPDATED: Copy join link button */}
               <button
-                onClick={handleCopyLink}
+                onClick={handleCopyJoinLink}
                 className="p-2.5 hover:bg-slate-700/50 rounded-xl transition-all duration-200 hover:scale-110 group/btn border border-transparent hover:border-slate-600/50"
-                title="Copy Link"
+                title="Copy Join Link"
               >
                 <Copy
                   className={`w-4 h-4 transition-colors ${
@@ -444,10 +440,31 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
 
                 {showDropdown && (
                   <div className="absolute right-0 top-full mt-2 bg-slate-800/95 backdrop-blur-xl border border-slate-700/60 rounded-xl shadow-2xl z-[60] min-w-[200px] overflow-hidden animate-in slide-in-from-top-5 duration-300">
-                    {" "}
                     <div className="p-2">
                       {/* View Options */}
                       <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-700/50">
+                        Share Options
+                      </div>
+
+                      {/* UPDATED: Enhanced share options */}
+                      <button
+                        onClick={handleShare}
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        Invite Members
+                      </button>
+
+                      <button
+                        onClick={handleCopyJoinLink}
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Copy Join Link
+                      </button>
+
+                      <div className="h-px bg-slate-700/50 my-2"></div>
+                      <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                         Actions
                       </div>
 
@@ -456,34 +473,11 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
                         className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
                       >
                         <Download className="w-4 h-4" />
-                        Export Data
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          /* Handle duplicate */
-                        }}
-                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
-                      >
-                        <Copy className="w-4 h-4" />
-                        Duplicate Project
-                      </button>
-
-                      <button
-                        onClick={handleArchive}
-                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
-                      >
-                        <Archive className="w-4 h-4" />
-                        Archive Project
+                        Export Project
                       </button>
 
                       {project.userRole === "owner" && (
                         <>
-                          <div className="h-px bg-slate-700/50 my-2"></div>
-                          <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                            Management
-                          </div>
-
                           <button
                             onClick={handleEdit}
                             className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
@@ -493,19 +487,23 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
                           </button>
 
                           <button
-                            onClick={() => {
-                              /* Handle settings */
-                            }}
+                            onClick={handleArchive}
                             className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-300 hover:bg-slate-700/50 rounded-lg transition-all duration-200 hover:text-white"
                           >
-                            <Settings className="w-4 h-4" />
-                            Project Settings
+                            <Archive className="w-4 h-4" />
+                            Archive
                           </button>
 
                           <div className="h-px bg-slate-700/50 my-2"></div>
+
                           <button
-                            onClick={() => onDelete(project.id)}
-                            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 hover:text-red-300 border border-transparent hover:border-red-500/20"
+                            onClick={() => {
+                              if (window.confirm('Are you sure you want to delete this project?')) {
+                                onDelete(project._id);
+                              }
+                              setShowDropdown(false);
+                            }}
+                            className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
                           >
                             <Trash2 className="w-4 h-4" />
                             Delete Project
@@ -520,70 +518,16 @@ const ProjectCard = ({ project, viewMode = "grid", onDelete }) => {
           </div>
         </div>
 
-        {/* Enhanced Bottom Gradient */}
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-600/60 to-transparent"></div>
-
-        {/* Corner Accent */}
-        <div
-          className={`absolute bottom-0 right-0 w-16 h-16 bg-gradient-to-tl ${
-            colorConfig.bg
-          } opacity-10 rounded-tl-full transition-opacity duration-500 ${
-            isHovered ? "opacity-20" : ""
-          }`}
-        ></div>
+        {/* Toast notification for copy action */}
+        {copied && (
+          <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-lg animate-slide-up z-50">
+            <div className="flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              Join link copied to clipboard!
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Enhanced Success Toast */}
-      {copied && (
-        <div className="fixed top-4 right-4 bg-emerald-500/90 backdrop-blur-sm text-white px-6 py-3 rounded-xl shadow-xl z-50 border border-emerald-400/30 animate-in slide-in-from-top-5 duration-300">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="font-medium">Link copied to clipboard!</span>
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Share Modal */}
-      {showShareModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-slate-800/95 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div
-                className={`p-3 rounded-xl ${colorConfig.light} ${colorConfig.accent}`}
-              >
-                <Share2 className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-white">Share Project</h3>
-                <p className="text-slate-400 text-sm">
-                  Invite others to collaborate
-                </p>
-              </div>
-            </div>
-
-            <p className="text-slate-300 mb-6">
-              Share{" "}
-              <span className="font-semibold text-white">"{project.name}"</span>{" "}
-              with team members
-            </p>
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowShareModal(false)}
-                className="px-6 py-2.5 text-slate-400 hover:text-white transition-colors rounded-xl hover:bg-slate-700/50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => setShowShareModal(false)}
-                className={`px-6 py-2.5 bg-gradient-to-r ${colorConfig.bg} text-white rounded-xl hover:shadow-lg transition-all duration-200 font-medium`}
-              >
-                Share Project
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
