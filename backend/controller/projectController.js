@@ -672,27 +672,37 @@ const getPendingInvitations = async (req, res) => {
       "collaborators.userId": userId,
       "collaborators.status": "pending",
     })
-      .select("name description owner createdAt")
+      .select("name description owner createdAt collaborators") // 🔧 Fix here
       .populate("owner", "name email username");
 
-    const invitationsWithOwnerInfo = projects.map((project) => {
-      const projectObj = project.toObject();
-      const invitation = project.collaborators.find((c) => c.userId === userId);
+    const invitationsWithOwnerInfo = projects
+      .map((project) => {
+        const projectObj = project.toObject();
 
-      return {
-        ...projectObj,
-        inviterName:
-          project.owner.name || project.owner.username || project.owner.email,
-        role: invitation.role,
-        invitedAt: invitation.invitedAt,
-      };
-    });
+        if (!project.collaborators) return null;
+
+        const invitation = project.collaborators.find(
+          (c) => c.userId.toString() === userId.toString()
+        );
+
+        if (!invitation) return null;
+
+        return {
+          ...projectObj,
+          inviterName:
+            project.owner.name || project.owner.username || project.owner.email,
+          role: invitation.role,
+          invitedAt: invitation.invitedAt,
+        };
+      })
+      .filter(Boolean); // remove nulls
 
     res.status(200).json({
       success: true,
       data: invitationsWithOwnerInfo,
     });
   } catch (error) {
+    console.error("Error in getPendingInvitations:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching pending invitations",
@@ -700,6 +710,7 @@ const getPendingInvitations = async (req, res) => {
     });
   }
 };
+
 
 // Respond to invitation
 const respondToInvitation = async (req, res) => {
