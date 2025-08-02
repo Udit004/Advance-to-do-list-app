@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useContext, useCallback } from "react";
-import API from "../api/config";
+import React, { useEffect, useContext } from "react";
 import AuthContext from "../context/AuthContext";
+import useTodoStore from "../stores/useTodoStore"; // Adjust path as needed
 
 // Import modular components
 import LoadingSpinner from "./todoComponents/LoadingSpinner";
@@ -17,154 +17,72 @@ const TodoList = () => {
   
   const { currentUser } = useContext(AuthContext);
   
-  // State management
-  const [tasks, setTasks] = useState([]);
-  const [filter, setFilter] = useState("all");
-  const [editingTodo, setEditingTodo] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false); // NEW: Form visibility state
-
-  // Fetch tasks from API
-  const fetchTasks = useCallback(async () => {
-    if (!currentUser || !currentUser.uid) {
-      setLoading(false);
-      return;
-    }
+  // Zustand store selectors
+  const {
+    // State
+    tasks,
+    filter,
+    editingTodo,
+    searchTerm,
+    loading,
+    showForm,
+    error,
     
-    try {
-      setLoading(true);
-      const response = await API.get(`/todos/${currentUser.uid}?excludeProjectTodos=true`);
-      setTasks(response.data);
-    } catch (error) {
-      console.error("Error fetching tasks:", error);
-      setTasks([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentUser]);
+    // Computed functions
+    getTotalTasks,
+    getCompletedTasks,
+    getFilteredTasks,
+    
+    // Actions
+    fetchTasks,
+    setFilter,
+    setSearchTerm,
+    createTodo,
+    updateTodo,
+    deleteTodo,
+    toggleTodoComplete,
+    startEditing,
+    startCreating,
+    cancelForm,
+    reset
+  } = useTodoStore();
+
+  // Get computed values
+  const totalTasks = getTotalTasks();
+  const completedTasks = getCompletedTasks();
+  const filteredTasks = getFilteredTasks();
 
   // Fetch tasks on component mount and user change
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    if (currentUser) {
+      fetchTasks(currentUser);
+    } else {
+      reset(); // Clear store when user logs out
+    }
+  }, [currentUser, fetchTasks, reset]);
 
   // Handle form submission for create/update from TodoForm
   const handleFormSubmit = async (taskData, originalTodo) => {
-    if (!currentUser?.uid) {
-      console.error("User not authenticated");
-      return;
-    }
     console.log("TodoList: currentUser.uid before API call:", currentUser?.uid);
 
-    try {
-      if (originalTodo) {
-        // Update existing todo
-        const response = await API.put(`/todos/update/${originalTodo._id}`, {
-          ...taskData,
-          user: currentUser.uid
-        });
-        
-        // Update local state with the response data
-        setTasks(prevTasks =>
-          prevTasks.map(task =>
-            task._id === originalTodo._id ? response.data : task
-          )
-        );
-        setEditingTodo(null);
-        setShowForm(false); // Hide form after edit
-      } else {
-        // Create new todo
-        const response = await API.post('/todos/create', {
-          ...taskData,
-          user: currentUser.uid
-        });
-        
-        // Add new todo to local state
-        setTasks(prevTasks => [...prevTasks, response.data]);
-        setShowForm(false); // Hide form after create
-      }
-    } catch (error) {
-      console.error("Error saving todo:", error);
+    if (originalTodo) {
+      // Update existing todo
+      await updateTodo(taskData, originalTodo, currentUser);
+    } else {
+      // Create new todo
+      await createTodo(taskData, currentUser);
     }
   };
 
-  // Handle cancel editing/creating
-  const handleCancelEdit = useCallback(() => {
-    setEditingTodo(null);
-    setShowForm(false); // Hide form on cancel
-  }, []);
-
-  // Handle edit button click
-  const handleEditClick = useCallback((task) => {
-    setEditingTodo(task);
-    setShowForm(true); // Show form for editing
-  }, []);
-
-  // Handle add new todo button click
-  const handleAddClick = useCallback(() => {
-    setEditingTodo(null);
-    setShowForm(true);
-  }, []);
-
   // Handle task deletion
-  const handleDelete = useCallback(async (id) => {
-    try {
-      await API.delete(`/todos/delete/${id}`);
-      setTasks(prevTasks => prevTasks.filter(task => task._id !== id));
-    } catch (error) {
-      console.error("Error deleting todo:", error);
-    }
-  }, []);
+  const handleDelete = async (id) => {
+    await deleteTodo(id);
+  };
 
   // Handle task completion toggle
-  const handleToggleComplete = useCallback(async (id, isChecked) => {
-    try {
-      const response = await API.patch(`/todos/toggle/${id}`, { isCompleted: isChecked });
-      setTasks(prevTasks =>
-        prevTasks.map(task =>
-          task._id === id ? response.data.data : task
-        )
-      );
-    } catch (error) {
-      console.error("Error toggling todo:", error);
-    }
-  }, []);
-
-  // Handle search input change
-  const handleSearchChange = useCallback((value) => {
-    setSearchTerm(value);
-  }, []);
-
-  // Handle filter change
-  const handleFilterChange = useCallback((newFilter) => {
-    setFilter(newFilter);
-  }, []);
-
-  // Computed values
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(task => task.isCompleted).length;
-
-  // Filter tasks based on search term and filter
-  const filteredTasks = tasks.filter(task => {
-    const term = searchTerm.toLowerCase();
-    
-    // Filter by completion status
-    const matchFilter =
-      filter === "completed"
-        ? task.isCompleted
-        : filter === "pending"
-        ? !task.isCompleted
-        : true;
-    
-    // Filter by search term
-    const matchSearch =
-      (task.task && task.task.toLowerCase().includes(term)) ||
-      (task.description && task.description.toLowerCase().includes(term)) ||
-      (task.list && task.list.toLowerCase().includes(term));
-
-    return matchFilter && matchSearch;
-  });
+  const handleToggleComplete = async (id, isChecked) => {
+    await toggleTodoComplete(id, isChecked);
+  };
 
   // Loading state
   if (loading) {
@@ -196,6 +114,13 @@ const TodoList = () => {
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+            <p className="text-red-400 text-center">{error}</p>
+          </div>
+        )}
+
         {/* Progress Bar */}
         <ProgressBar totalTasks={totalTasks} completedTasks={completedTasks} />
         
@@ -205,13 +130,13 @@ const TodoList = () => {
           <div className="flex-1">
             <SearchInput 
               searchTerm={searchTerm} 
-              onSearchChange={handleSearchChange} 
+              onSearchChange={setSearchTerm} 
             />
           </div>
           
           {/* Add Todo Button */}
           <button
-            onClick={handleAddClick}
+            onClick={startCreating}
             className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 min-w-fit"
           >
             <span className="text-lg">➕</span>
@@ -219,22 +144,41 @@ const TodoList = () => {
           </button>
         </div>
 
-        {/* Todo Form - Only show when needed */}
+        {/* Todo Form Modal - Only show when needed */}
         {showForm && (
-          <div className="mb-6">
-            <TodoForm 
-              editingTodo={editingTodo}
-              onSubmit={handleFormSubmit}
-              onCancel={handleCancelEdit}
-              currentUser={currentUser}
-            />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-slate-800 border-b border-slate-700 px-6 py-4 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-200">
+                    {editingTodo ? 'Edit Task' : 'Add New Task'}
+                  </h2>
+                  <button
+                    onClick={cancelForm}
+                    className="text-slate-400 hover:text-slate-300 transition-colors p-2 hover:bg-slate-700 rounded-lg"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="p-6">
+                <TodoForm 
+                  editingTodo={editingTodo}
+                  onSubmit={handleFormSubmit}
+                  onCancel={cancelForm}
+                  currentUser={currentUser}
+                />
+              </div>
+            </div>
           </div>
         )}
 
         {/* Filters */}
         <TodoFilters 
           currentFilter={filter} 
-          onFilterChange={handleFilterChange} 
+          onFilterChange={setFilter} 
         />
 
         {/* Tasks List */}
@@ -247,7 +191,7 @@ const TodoList = () => {
                 key={task._id}
                 task={task}
                 onToggleComplete={handleToggleComplete}
-                onEdit={handleEditClick}
+                onEdit={startEditing}
                 onDelete={handleDelete}
               />
             ))

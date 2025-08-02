@@ -1,58 +1,67 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Sparkles, Plus, RotateCcw, X, Calendar, Flag, Folder, CheckCircle, AlertTriangle, Search, Filter, Trash2, Clock, BarChart3 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
+import useTodoStore from '../stores/useTodoStore'; // Adjust path as needed
 import API from '../api/config';
 
 const AICreator = () => {
   const { currentUser } = useContext(AuthContext);
   
-  // AI Creator States
+  // AI Creator States (keep these local as they're specific to AI functionality)
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [generatedTask, setGeneratedTask] = useState(null);
-  const [error, setError] = useState('');
+  const [aiError, setAiError] = useState(''); // Renamed to avoid conflict with store error
   
-  // Todo List States
-  const [tasks, setTasks] = useState([]);
-  const [filter, setFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [todoLoading, setTodoLoading] = useState(false);
-
-  // Fetch tasks from API
-  const fetchTasks = useCallback(async () => {
-    if (!currentUser || !currentUser.uid) {
-      setTodoLoading(false);
-      return;
-    }
+  // Zustand store selectors - get todo-related state and actions
+  const {
+    // State
+    tasks,
+    filter,
+    searchTerm,
+    loading: todoLoading,
+    error: todoError,
     
-    try {
-      setTodoLoading(true);
-      const response = await API.get(`/todos/${currentUser.uid}?excludeProjectTodos=true`);
-      setTasks(response.data);
-    } catch (error) {
-      console.error("Error fetching tasks:", error);
-      setTasks([]);
-    } finally {
-      setTodoLoading(false);
-    }
-  }, [currentUser]);
+    // Computed functions
+    getTotalTasks,
+    getCompletedTasks,
+    getFilteredTasks,
+    
+    // Actions
+    fetchTasks,
+    setFilter,
+    setSearchTerm,
+    toggleTodoComplete,
+    deleteTodo,
+    addGeneratedTask,
+    reset
+  } = useTodoStore();
 
-  // Fetch tasks on component mount
+  // Get computed values
+  const totalTasks = getTotalTasks();
+  const completedTasks = getCompletedTasks();
+  const filteredTasks = getFilteredTasks();
+
+  // Fetch tasks on component mount and user change
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    if (currentUser) {
+      fetchTasks(currentUser);
+    } else {
+      reset(); // Clear store when user logs out
+    }
+  }, [currentUser, fetchTasks, reset]);
 
   // AI Task Generation
   const handleSubmit = async (e) => {
     e.preventDefault();
   
     if (!prompt.trim()) {
-      setError('Please enter a prompt to generate a task.');
+      setAiError('Please enter a prompt to generate a task.');
       return;
     }
   
     setLoading(true);
-    setError('');
+    setAiError('');
     setGeneratedTask(null);
   
     try {
@@ -67,7 +76,7 @@ const AICreator = () => {
       }
     } catch (err) {
       console.error('AI Creator Error:', err);
-      setError(
+      setAiError(
         err.response?.data?.error ||
         err.message ||
         'Failed to generate task. Please try again.'
@@ -76,67 +85,15 @@ const AICreator = () => {
       setLoading(false);
     }
   };
-  
 
-  // Add generated task to todo list
+  // Add generated task to todo list using Zustand store
   const handleAddToTodoList = async () => {
-    if (!generatedTask || !currentUser?.uid) return;
-  
-    try {
-      // Map AI's category to your schema's list enum
-      const categoryMap = {
-        personal: 'general',
-        work: 'work',
-        college: 'education',
-        other: 'general'
-      };
-  
-      const mappedCategory = categoryMap[generatedTask.category?.toLowerCase()] || 'general';
-  
-      const taskData = {
-        task: generatedTask.title,
-        description: generatedTask.description || '',
-        dueDate: generatedTask.dueDate || '',
-        priority: ['low', 'medium', 'high'].includes(generatedTask.priority?.toLowerCase())
-          ? generatedTask.priority.toLowerCase()
-          : 'medium',
-        list: mappedCategory,
-        user: currentUser.uid,
-        isCompleted: false
-      };
-  
-      const response = await API.post('/todos/create', taskData);
-      setTasks(prevTasks => [...prevTasks, response.data]);
+    const success = await addGeneratedTask(generatedTask, currentUser);
+    if (success) {
       setGeneratedTask(null);
-      setError('');
-    } catch (error) {
-      console.error("Error adding task to todo list:", error);
-      setError("Failed to add task to todo list. Please try again.");
+      setAiError('');
     }
   };
-  
-  // Todo List Functions
-  const handleToggleComplete = useCallback(async (id, isChecked) => {
-    try {
-      const response = await API.patch(`/todos/toggle/${id}`, { isCompleted: isChecked });
-      setTasks(prevTasks =>
-        prevTasks.map(task =>
-          task._id === id ? response.data : task
-        )
-      );
-    } catch (error) {
-      console.error("Error toggling todo:", error);
-    }
-  }, []);
-
-  const handleDelete = useCallback(async (id) => {
-    try {
-      await API.delete(`/todos/delete/${id}`);
-      setTasks(prevTasks => prevTasks.filter(task => task._id !== id));
-    } catch (error) {
-      console.error("Error deleting todo:", error);
-    }
-  }, []);
 
   // Utility Functions
   const formatDueDate = (dateString) => {
@@ -177,29 +134,8 @@ const AICreator = () => {
     }
   };
 
-  // Computed values
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(task => task.isCompleted).length;
+  // Computed values from Zustand store
   const progressPercentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-
-  // Filter tasks
-  const filteredTasks = tasks.filter(task => {
-    const term = searchTerm.toLowerCase();
-    
-    const matchFilter =
-      filter === "completed"
-        ? task.isCompleted
-        : filter === "pending"
-        ? !task.isCompleted
-        : true;
-    
-    const matchSearch =
-      (task.task && task.task.toLowerCase().includes(term)) ||
-      (task.description && task.description.toLowerCase().includes(term)) ||
-      (task.list && task.list.toLowerCase().includes(term));
-
-    return matchFilter && matchSearch;
-  });
 
   if (!currentUser) {
     return (
@@ -275,21 +211,34 @@ const AICreator = () => {
               </div>
             </div>
 
-            {/* Error Display */}
-            {error && (
+            {/* AI Error Display */}
+            {aiError && (
               <div className="bg-red-900/30 border border-red-500/30 p-4 rounded-xl">
                 <div className="flex items-center">
                   <AlertTriangle className="w-5 h-5 text-red-400 mr-3" />
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium text-red-300">Error</h3>
-                    <p className="text-sm text-red-400">{error}</p>
+                    <h3 className="text-sm font-medium text-red-300">AI Error</h3>
+                    <p className="text-sm text-red-400">{aiError}</p>
                   </div>
                   <button
-                    onClick={() => setError('')}
+                    onClick={() => setAiError('')}
                     className="text-red-400 hover:text-red-300"
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Todo Error Display */}
+            {todoError && (
+              <div className="bg-red-900/30 border border-red-500/30 p-4 rounded-xl">
+                <div className="flex items-center">
+                  <AlertTriangle className="w-5 h-5 text-red-400 mr-3" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-red-300">Todo Error</h3>
+                    <p className="text-sm text-red-400">{todoError}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -475,7 +424,7 @@ const AICreator = () => {
                         <input
                           type="checkbox"
                           checked={task.isCompleted}
-                          onChange={(e) => handleToggleComplete(task._id, e.target.checked)}
+                          onChange={(e) => toggleTodoComplete(task._id, e.target.checked)}
                           className="mt-1 w-4 h-4 text-purple-600 bg-slate-700 border-slate-500 rounded focus:ring-purple-500 focus:ring-2"
                         />
                         <div className="flex-1 min-w-0">
@@ -501,7 +450,7 @@ const AICreator = () => {
                         </div>
                         <div className="flex items-center space-x-1">
                           <button
-                            onClick={() => handleDelete(task._id)}
+                            onClick={() => deleteTodo(task._id)}
                             className="p-1 text-slate-400 hover:text-red-400 transition-colors"
                           >
                             <Trash2 className="w-4 h-4" />

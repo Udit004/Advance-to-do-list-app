@@ -428,12 +428,38 @@ const MobileHeader = ({ userProfile, activeItem }) => {
   );
 };
 
-// Main TodoDashboard Component - Mobile Optimized
+// Helper functions for localStorage management
+const LOCAL_STORAGE_KEY = 'todoDashboard_activeItem';
+
+const saveActiveItem = (activeItem) => {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, activeItem);
+  } catch (error) {
+    console.warn('Failed to save active item to localStorage:', error);
+  }
+};
+
+const loadActiveItem = () => {
+  try {
+    const savedItem = localStorage.getItem(LOCAL_STORAGE_KEY);
+    // Validate that the saved item is one of the valid menu items
+    const validItems = ['todoList', 'projectDashboard', 'aiCreator'];
+    return validItems.includes(savedItem) ? savedItem : 'todoList';
+  } catch (error) {
+    console.warn('Failed to load active item from localStorage:', error);
+    return 'todoList';
+  }
+};
+
+// Main TodoDashboard Component - Mobile Optimized with State Persistence
 const TodoDashboard = () => {
   const auth = useAuth() || {};
   const { currentUser: user } = auth;
   const [isExpanded, setIsExpanded] = useState(false); // Default to closed on mobile
-  const [activeItem, setActiveItem] = useState("todoList");
+  
+  // Initialize activeItem from localStorage or default to "todoList"
+  const [activeItem, setActiveItemState] = useState(() => loadActiveItem());
+  
   const [userProfile, setUserProfile] = useState({
     isPaid: false,
     username: "",
@@ -444,6 +470,12 @@ const TodoDashboard = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Enhanced setActiveItem function that saves to localStorage
+  const setActiveItem = (newActiveItem) => {
+    setActiveItemState(newActiveItem);
+    saveActiveItem(newActiveItem);
+  };
 
   // Close sidebar when window is resized to desktop
   useEffect(() => {
@@ -519,6 +551,18 @@ const TodoDashboard = () => {
 
     fetchUserProfile();
   }, [user]);
+
+  // Effect to handle premium feature access validation
+  useEffect(() => {
+    // If user is not premium and trying to access a premium feature, redirect to todoList
+    if (!isLoading && !userProfile?.isPaid) {
+      const premiumFeatures = ['projectDashboard', 'aiCreator'];
+      if (premiumFeatures.includes(activeItem)) {
+        console.log('Redirecting non-premium user from premium feature to todoList');
+        setActiveItem('todoList');
+      }
+    }
+  }, [userProfile?.isPaid, isLoading, activeItem]);
 
   const renderMainContent = () => {
     if (isLoading) {
@@ -688,6 +732,10 @@ const TodoDashboard = () => {
                 Is Premium: {userProfile?.isPaid ? "Yes" : "No"}
                 <br />
                 Profile Username: {userProfile?.username || "Not set"}
+                <br />
+                Active Item: {activeItem}
+                <br />
+                Saved in localStorage: {localStorage.getItem(LOCAL_STORAGE_KEY) || "None"}
               </div>
             )}
           </div>
